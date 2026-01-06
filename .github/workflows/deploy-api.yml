@@ -6,6 +6,7 @@ on:
     paths:
       - "api/**"
       - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -14,11 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
+      # Optional sanity check (runs in api folder)
+      - name: Install deps (for validation only)
+        working-directory: api
+        run: npm ci
+
+      # IMPORTANT: do not deploy node_modules
+      - name: Remove node_modules before deploy
+        working-directory: api
+        run: rm -rf node_modules
 
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
@@ -27,4 +37,3 @@ jobs:
           package: api
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           scm-do-build-during-deployment: true
-          enable-oryx-build: true
