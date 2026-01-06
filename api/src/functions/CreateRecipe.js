@@ -1,6 +1,6 @@
 const { app } = require("@azure/functions");
-const { randomUUID } = require("crypto");
-const tableClient = require("../storage/tableClient");
+const crypto = require("crypto");
+const { getRecipesTableClient } = require("../shared/storage");
 
 app.http("CreateRecipe", {
   methods: ["POST"],
@@ -9,36 +9,30 @@ app.http("CreateRecipe", {
     try {
       const body = await request.json();
 
-      const { title, ingredients, instructions } = body;
+      const title = (body.title || "").trim();
+      const instructions = (body.instructions || "").trim();
+      const ingredients = body.ingredients; // array expected
 
-      // Validation
-      if (
-        !title ||
-        !Array.isArray(ingredients) ||
-        ingredients.length === 0 ||
-        !instructions
-      ) {
-        return {
-          status: 400,
-          jsonBody: {
-            error: "Invalid request body"
-          }
-        };
-      }
+      if (!title) return { status: 400, jsonBody: { error: "title is required" } };
+      if (!Array.isArray(ingredients)) return { status: 400, jsonBody: { error: "ingredients must be an array" } };
+      if (!instructions) return { status: 400, jsonBody: { error: "instructions is required" } };
 
-      const id = randomUUID();
+      const id = crypto.randomUUID();
       const createdAt = new Date().toISOString();
 
       const entity = {
-        partitionKey: "RECIPE",
+        partitionKey: "recipe",
         rowKey: id,
         title,
-        ingredients: JSON.stringify(ingredients),
         instructions,
-        createdAt
+        // Table Storage stores primitives; store array as JSON string
+        ingredientsJson: JSON.stringify(ingredients),
+        createdAt,
+        imageUrl: "", // set later by UploadRecipeImage
       };
 
-      await tableClient.createEntity(entity);
+      const table = getRecipesTableClient();
+      await table.createEntity(entity);
 
       return {
         status: 201,
@@ -47,15 +41,13 @@ app.http("CreateRecipe", {
           title,
           ingredients,
           instructions,
-          createdAt
-        }
+          imageUrl: "",
+          createdAt,
+        },
       };
     } catch (err) {
-      context.log.error(err);
-      return {
-        status: 500,
-        jsonBody: { error: "Failed to create recipe" }
-      };
+      context.error(err);
+      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
     }
-  }
+  },
 });
