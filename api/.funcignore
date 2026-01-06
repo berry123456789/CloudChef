@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+=======
+cd ~/CloudChef
+nano api/.funcignore
+git add api/.funcignore .github/workflows/*.yml
+git commit -m "Fix funcignore and enable Oryx build"
+git push
 .git*
 .vscode
 local.settings.json
@@ -5,4 +12,21 @@ test
 getting_started.md
 node_modules
 *.ts
+*.js.map*.js.map
+*.ts
+>>>>>>> ed1059f (Fix funcignore and enable Oryx build)
+.git*
+.vscode
+local.settings.json
+test
+getting_started.md
+<<<<<<< HEAD
+node_modules
+*.ts
 *.js.map
+=======
+node_modules/@types/
+node_modules/azure-functions-core-tools/
+node_modules/typescript/
+>>>>>>> ed1059f (Fix funcignore and enable Oryx build)
+node_modules/
