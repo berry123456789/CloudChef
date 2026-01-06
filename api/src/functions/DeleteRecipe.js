@@ -1,30 +1,22 @@
 const { app } = require("@azure/functions");
-const { TableClient } = require("@azure/data-tables");
-
-const TABLE_NAME = "Recipes";
-const PARTITION_KEY = "recipe";
-
-function getTableClient() {
-  const conn = process.env.AzureWebJobsStorage;
-  if (!conn) throw new Error("Missing AzureWebJobsStorage app setting");
-  return TableClient.fromConnectionString(conn, TABLE_NAME);
-}
+const { getRecipesTableClient } = require("../shared/storage");
 
 app.http("DeleteRecipe", {
   methods: ["DELETE"],
   authLevel: "anonymous",
   handler: async (request, context) => {
-    const table = getTableClient();
-    await table.createTable();
-
-    const id = request.query.get("id");
-    if (!id) return { status: 400, jsonBody: { error: "Missing ?id=" } };
-
     try {
-      await table.deleteEntity(PARTITION_KEY, id);
+      const id = request.query.get("id");
+      if (!id) return { status: 400, jsonBody: { error: "id query param is required" } };
+
+      const table = getRecipesTableClient();
+      await table.deleteEntity("recipe", id);
+
       return { status: 204 };
-    } catch {
-      return { status: 404, jsonBody: { error: "Recipe not found" } };
+    } catch (err) {
+      if (err?.statusCode === 404) return { status: 404, jsonBody: { error: "Recipe not found" } };
+      context.error(err);
+      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
     }
   },
 });
