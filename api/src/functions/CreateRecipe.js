@@ -32,7 +32,9 @@ app.http("CreateRecipe", {
       };
 
       const table = getRecipesTableClient();
+      await table.createTable().catch(() => {}); // create if missing
       await table.createEntity(entity);
+
 
       return {
         status: 201,
@@ -51,3 +53,4 @@ app.http("CreateRecipe", {
     }
   },
 });
+
