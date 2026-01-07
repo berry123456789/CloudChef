@@ -5,3 +5,4 @@ require('./functions/GetRecipe');
 require('./functions/UpdateRecipe');
 require('./functions/DeleteRecipe');
 require('./functions/UploadRecipeImage');
+require('./functions/ListRecipes');
