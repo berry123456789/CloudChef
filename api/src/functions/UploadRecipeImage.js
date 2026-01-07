@@ -1,12 +1,20 @@
 const { app } = require("@azure/functions");
-const { getRecipesTableClient, getBlobContainerClient, PARTITION_KEY, ensureStorage } = require("../shared/storage");
+const crypto = require("crypto");
+const path = require("path");
+const {
+  getBlobContainerClient,
+  getRecipesTableClient,
+  TABLE_NAME,
+  BLOB_CONTAINER,
+} = require("../shared/storage");
 
-function getExtFromContentType(ct) {
-  if (!ct) return "bin";
-  if (ct.includes("png")) return "png";
-  if (ct.includes("jpeg") || ct.includes("jpg")) return "jpg";
-  if (ct.includes("webp")) return "webp";
-  return "bin";
+function guessExtFromContentType(contentType = "") {
+  const ct = contentType.toLowerCase();
+  if (ct.includes("image/jpeg")) return ".jpg";
+  if (ct.includes("image/png")) return ".png";
+  if (ct.includes("image/webp")) return ".webp";
+  if (ct.includes("image/gif")) return ".gif";
+  return "";
 }
 
 app.http("UploadRecipeImage", {
@@ -14,59 +22,85 @@ app.http("UploadRecipeImage", {
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      const id = request.query.get("id");
-      if (!id) return { status: 400, jsonBody: { error: "id is required" } };
+      const url = new URL(request.url);
 
-      await ensureStorage();
+      // recipe id in query string
+      const id = (url.searchParams.get("id") || "").trim();
+      if (!id) {
+        return { status: 400, jsonBody: { error: "id query parameter is required" } };
+      }
 
-      // Confirm recipe exists
-      const table = getRecipesTableClient();
-      const entity = await table.getEntity(PARTITION_KEY, id);
+      const contentType = (request.headers.get("content-type") || "").trim();
 
-      // Parse multipart form-data (Azure Functions v4 supports request.formData())
-      const form = await request.formData();
-      const file = form.get("file");
-      if (!file) return { status: 400, jsonBody: { error: "file is required (form-data key: file)" } };
+      // Accept either:
+      // 1) binary body (recommended)
+      // 2) JSON body: { "base64": "...", "contentType": "image/png" }
+      let buffer;
+      let finalContentType = contentType;
 
-      // file is a Web File object
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      if (contentType.toLowerCase().includes("application/json")) {
+        const body = await request.json();
+        const base64 = (body.base64 || "").trim();
+        if (!base64) return { status: 400, jsonBody: { error: "base64 is required in JSON body" } };
+        finalContentType = (body.contentType || "application/octet-stream").trim();
+        buffer = Buffer.from(base64, "base64");
+      } else {
+        const ab = await request.arrayBuffer();
+        buffer = Buffer.from(ab);
+      }
 
-      const contentType = file.type || "application/octet-stream";
-      const ext = getExtFromContentType(contentType);
-      const blobName = `${id}.${ext}`;
+      if (!buffer || buffer.length === 0) {
+        return { status: 400, jsonBody: { error: "No image data received" } };
+      }
 
+      // Create blob name
+      const ext = guessExtFromContentType(finalContentType) || ".bin";
+      const fileName = `image-${crypto.randomUUID()}${ext}`;
+      const blobName = `recipes/${id}/${fileName}`;
+
+      // Upload to blob
       const container = getBlobContainerClient();
-      await container.createIfNotExists();
+      await container.createIfNotExists(); // safe if it already exists
 
-      const blob = container.getBlockBlobClient(blobName);
-      await blob.uploadData(buffer, {
-        blobHTTPHeaders: { blobContentType: contentType },
+      const blockBlob = container.getBlockBlobClient(blobName);
+      await blockBlob.uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: finalContentType || "application/octet-stream" },
       });
 
-      const imageUrl = blob.url;
+      // This is the plain blob URL (works if container is public).
+      // If your container is private, this URL won't be directly viewable without SAS.
+      const imageUrl = blockBlob.url;
 
-      // Update entity with imageUrl (keep everything else)
-      const updated = {
-        partitionKey: PARTITION_KEY,
-        rowKey: id,
-        title: entity.title,
-        instructions: entity.instructions,
-        ingredientsJson: entity.ingredientsJson,
-        createdAt: entity.createdAt,
-        imageUrl,
-      };
-      await table.updateEntity(updated, "Replace");
+      // Update entity in Table Storage
+      const table = getRecipesTableClient();
 
-      return { status: 200, jsonBody: { id, imageUrl } };
-    } catch (err) {
-      const status = err?.statusCode === 404 ? 404 : 500;
-      return {
-        status,
-        jsonBody: {
-          error: status === 404 ? "Recipe not found" : "Server error",
-          details: status === 500 ? String(err?.message || err) : undefined,
+      // We store both blobName and imageUrl (url is handy for later)
+      await table.updateEntity(
+        {
+          partitionKey: "recipe",
+          rowKey: id,
+          imageBlobName: blobName,
+          imageUrl: imageUrl,
+          imageUpdatedAt: new Date().toISOString(),
         },
+        "Merge"
+      );
+
+      return {
+        status: 200,
+        jsonBody: {
+          id,
+          table: TABLE_NAME,
+          container: BLOB_CONTAINER,
+          imageBlobName: blobName,
+          imageUrl,
+        },
+      };
+    } catch (err) {
+      context.error(err);
+      return {
+        status: 500,
+        jsonBody: { error: "Server error", details: String(err?.message || err) },
       };
     }
   },
