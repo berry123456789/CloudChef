@@ -1,64 +1,86 @@
 const { app } = require("@azure/functions");
-const { getRecipesTableClient, PARTITION_KEY } = require("../shared/storage");
+const { getRecipesTableClient } = require("../shared/storage");
 
 app.http("UpdateRecipe", {
-  methods: ["PUT", "PATCH"],
+  methods: ["PATCH", "PUT", "POST"], // Postman friendly, PATCH is the “proper” one
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      const id = request.query.get("id");
-      if (!id) return { status: 400, jsonBody: { error: "id is required" } };
+      const url = new URL(request.url);
+      const id = (url.searchParams.get("id") || "").trim();
+      if (!id) return { status: 400, jsonBody: { error: "id query parameter is required" } };
 
-      const body = await request.json();
+      let body = {};
+      try {
+        body = await request.json();
+      } catch {
+        return { status: 400, jsonBody: { error: "Request body must be valid JSON" } };
+      }
 
-      const table = getRecipesTableClient();
-      const existing = await table.getEntity(PARTITION_KEY, id);
+      // Allow partial updates
+      const updates = {};
+      const responsePatch = {};
 
-      const title = body.title !== undefined ? String(body.title).trim() : existing.title;
-      const instructions =
-        body.instructions !== undefined ? String(body.instructions).trim() : existing.instructions;
+      if (body.title !== undefined) {
+        const title = String(body.title || "").trim();
+        if (!title) return { status: 400, jsonBody: { error: "title cannot be empty" } };
+        updates.title = title;
+        responsePatch.title = title;
+      }
 
-      let ingredientsJson = existing.ingredientsJson;
+      if (body.instructions !== undefined) {
+        const instructions = String(body.instructions || "").trim();
+        if (!instructions) return { status: 400, jsonBody: { error: "instructions cannot be empty" } };
+        updates.instructions = instructions;
+        responsePatch.instructions = instructions;
+      }
+
       if (body.ingredients !== undefined) {
         if (!Array.isArray(body.ingredients)) {
           return { status: 400, jsonBody: { error: "ingredients must be an array" } };
         }
-        ingredientsJson = JSON.stringify(body.ingredients);
+        updates.ingredientsJson = JSON.stringify(body.ingredients);
+        responsePatch.ingredients = body.ingredients;
       }
 
-      const updated = {
-        partitionKey: PARTITION_KEY,
-        rowKey: id,
-        title,
-        instructions,
-        ingredientsJson,
-        createdAt: existing.createdAt,
-        imageUrl: existing.imageUrl || "",
-      };
+      if (Object.keys(updates).length === 0) {
+        return {
+          status: 400,
+          jsonBody: { error: "Nothing to update. Provide title, instructions, and/or ingredients." },
+        };
+      }
 
-      // replace = full entity update
-      await table.updateEntity(updated, "Replace");
+      const table = getRecipesTableClient();
+
+      // Merge update (keeps existing fields like imageUrl)
+      await table.updateEntity(
+        {
+          partitionKey: "recipe",
+          rowKey: id,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        },
+        "Merge"
+      );
+
+      // Optional: read back the updated entity so response always matches storage
+      const entity = await table.getEntity("recipe", id);
 
       return {
         status: 200,
         jsonBody: {
           id,
-          title,
-          ingredients: JSON.parse(ingredientsJson || "[]"),
-          instructions,
-          imageUrl: updated.imageUrl,
-          createdAt: updated.createdAt,
+          title: entity.title,
+          instructions: entity.instructions,
+          ingredients: entity.ingredientsJson ? JSON.parse(entity.ingredientsJson) : [],
+          imageUrl: entity.imageUrl || "",
+          createdAt: entity.createdAt,
+          updatedAt: entity.updatedAt || null,
         },
       };
     } catch (err) {
-      const status = err?.statusCode === 404 ? 404 : 500;
-      return {
-        status,
-        jsonBody: {
-          error: status === 404 ? "Recipe not found" : "Server error",
-          details: status === 500 ? String(err?.message || err) : undefined,
-        },
-      };
+      context.error(err);
+      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
     }
   },
 });
