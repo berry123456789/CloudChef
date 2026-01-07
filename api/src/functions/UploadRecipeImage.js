@@ -1,5 +1,13 @@
 const { app } = require("@azure/functions");
-const { getBlobContainerClient, getRecipesTableClient } = require("../shared/storage");
+const { getRecipesTableClient, getBlobContainerClient, PARTITION_KEY, ensureStorage } = require("../shared/storage");
+
+function getExtFromContentType(ct) {
+  if (!ct) return "bin";
+  if (ct.includes("png")) return "png";
+  if (ct.includes("jpeg") || ct.includes("jpg")) return "jpg";
+  if (ct.includes("webp")) return "webp";
+  return "bin";
+}
 
 app.http("UploadRecipeImage", {
   methods: ["POST"],
@@ -7,43 +15,59 @@ app.http("UploadRecipeImage", {
   handler: async (request, context) => {
     try {
       const id = request.query.get("id");
-      if (!id) return { status: 400, jsonBody: { error: "id query param is required" } };
+      if (!id) return { status: 400, jsonBody: { error: "id is required" } };
 
-      const contentType = request.headers.get("content-type") || "";
+      await ensureStorage();
 
-      // Expect raw binary upload in Postman using Body -> binary
-      const buffer = Buffer.from(await request.arrayBuffer());
-      if (!buffer.length) return { status: 400, jsonBody: { error: "No file received" } };
+      // Confirm recipe exists
+      const table = getRecipesTableClient();
+      const entity = await table.getEntity(PARTITION_KEY, id);
 
-      // basic extension guess
-      let ext = "bin";
-      if (contentType.includes("png")) ext = "png";
-      else if (contentType.includes("jpeg") || contentType.includes("jpg")) ext = "jpg";
-      else if (contentType.includes("webp")) ext = "webp";
+      // Parse multipart form-data (Azure Functions v4 supports request.formData())
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!file) return { status: 400, jsonBody: { error: "file is required (form-data key: file)" } };
+
+      // file is a Web File object
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const contentType = file.type || "application/octet-stream";
+      const ext = getExtFromContentType(contentType);
+      const blobName = `${id}.${ext}`;
 
       const container = getBlobContainerClient();
-      await container.createIfNotExists({ access: "blob" }); // makes blob public-read
+      await container.createIfNotExists();
 
-      const blobName = `recipes/${id}.${ext}`;
-      const blobClient = container.getBlockBlobClient(blobName);
-
-      await blobClient.uploadData(buffer, {
-        blobHTTPHeaders: { blobContentType: contentType || "application/octet-stream" },
+      const blob = container.getBlockBlobClient(blobName);
+      await blob.uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: contentType },
       });
 
-      const imageUrl = blobClient.url;
+      const imageUrl = blob.url;
 
-      // Save imageUrl back to the recipe entity
-      const table = getRecipesTableClient();
-      await table.updateEntity(
-        { partitionKey: "recipe", rowKey: id, imageUrl },
-        "Merge"
-      );
+      // Update entity with imageUrl (keep everything else)
+      const updated = {
+        partitionKey: PARTITION_KEY,
+        rowKey: id,
+        title: entity.title,
+        instructions: entity.instructions,
+        ingredientsJson: entity.ingredientsJson,
+        createdAt: entity.createdAt,
+        imageUrl,
+      };
+      await table.updateEntity(updated, "Replace");
 
       return { status: 200, jsonBody: { id, imageUrl } };
     } catch (err) {
-      context.error(err);
-      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
+      const status = err?.statusCode === 404 ? 404 : 500;
+      return {
+        status,
+        jsonBody: {
+          error: status === 404 ? "Recipe not found" : "Server error",
+          details: status === 500 ? String(err?.message || err) : undefined,
+        },
+      };
     }
   },
 });
