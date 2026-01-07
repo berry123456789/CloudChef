@@ -1,5 +1,7 @@
 const { app } = require("@azure/functions");
-const { getRecipesTableClient, PARTITION_KEY } = require("../shared/storage");
+const { getRecipesTableClient } = require("../shared/storage");
+
+const PARTITION_KEY = "recipe";
 
 app.http("GetRecipe", {
   methods: ["GET"],
@@ -26,7 +28,6 @@ app.http("GetRecipe", {
         },
       };
     } catch (err) {
-      // TableClient throws 404 with statusCode
       const status = err?.statusCode === 404 ? 404 : 500;
       return {
         status,
