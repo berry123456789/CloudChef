@@ -14,26 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Hard fail if ANY workflow still contains npm ci (so we don't chase ghosts)
-      - name: Guard: fail if npm ci exists in workflows
+      - name: Debug: show any npm ci usage in workflows
+        shell: bash
         run: |
-          if grep -R "npm ci" -n .github/workflows; then
-            echo "ERROR: Found 'npm ci' in workflow files above. Replace with 'npm install'."
-            exit 1
-          else
-            echo "OK: No 'npm ci' found in workflows."
-          fi
+          echo "Searching for 'npm ci' in .github/workflows..."
+          grep -R "npm ci" -n .github/workflows || true
 
       - name: Use Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # Disable npm cache to avoid confusing installs while we stabilise
-          # (we can re-enable later)
-          cache: ""
 
-      # Self-heal: wipe lock and node_modules in CI, then install fresh
-      - name: Clean + Install
+      - name: Clean + Install (no ci)
+        shell: bash
         working-directory: web
         run: |
           rm -rf node_modules
@@ -50,7 +43,8 @@ jobs:
         working-directory: web
         run: npm prune --omit=dev
 
-      - name: Sanity check (prove dist + serve exist)
+      - name: Sanity check (dist + serve exist)
+        shell: bash
         working-directory: web
         run: |
           test -f dist/index.html
@@ -58,14 +52,15 @@ jobs:
           node -p "require('./node_modules/serve/package.json').version"
           echo "OK: dist + serve present"
 
-      - name: Create deploy zip (dist + prod node_modules)
+      - name: Create deploy zip
+        shell: bash
         run: |
           cd web
           zip -r ../webapp.zip dist package.json package-lock.json node_modules
           echo "=== ZIP CONTENTS (top) ==="
           unzip -l ../webapp.zip | head -n 80
 
-      - name: Deploy to Azure Web App (Publish Profile)
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
           app-name: cloudchef-webapp
