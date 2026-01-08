@@ -31,33 +31,14 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      # SPA rewrite for Azure App Service (so refresh + deep links work)
-      - name: Add SPA rewrite (web.config)
-        run: |
-          cat > web/dist/web.config <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <system.webServer>
-              <rewrite>
-                <rules>
-                  <rule name="SPA" stopProcessing="true">
-                    <match url=".*" />
-                    <conditions logicalGrouping="MatchAll">
-                      <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-                      <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-                    </conditions>
-                    <action type="Rewrite" url="/" />
-                  </rule>
-                </rules>
-              </rewrite>
-            </system.webServer>
-          </configuration>
-          EOF
+      - name: Prune devDependencies (keep only prod deps like serve)
+        working-directory: web
+        run: npm prune --omit=dev
 
-      - name: Create deploy zip (dist only)
+      - name: Create deploy zip (dist + prod node_modules)
         run: |
-          cd web/dist
-          zip -r ../../webapp.zip .
+          cd web
+          zip -r ../webapp.zip dist package.json package-lock.json node_modules
 
       - name: Deploy to Azure Web App (Publish Profile)
         uses: azure/webapps-deploy@v2
