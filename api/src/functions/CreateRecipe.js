@@ -7,15 +7,24 @@ app.http("CreateRecipe", {
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
+      const contentType = (request.headers.get("content-type") || "").toLowerCase();
+      if (!contentType.includes("application/json")) {
+        return { status: 415, jsonBody: { error: "Content-Type must be application/json" } };
+      }
+
       const body = await request.json();
 
       const title = (body.title || "").trim();
       const instructions = (body.instructions || "").trim();
-      const ingredients = body.ingredients; // array expected
+      const ingredients = body.ingredients;
 
       if (!title) return { status: 400, jsonBody: { error: "title is required" } };
-      if (!Array.isArray(ingredients)) return { status: 400, jsonBody: { error: "ingredients must be an array" } };
       if (!instructions) return { status: 400, jsonBody: { error: "instructions is required" } };
+      if (!Array.isArray(ingredients)) {
+        return { status: 400, jsonBody: { error: "ingredients must be an array" } };
+      }
+
+      const cleanedIngredients = ingredients.map((x) => String(x).trim()).filter(Boolean);
 
       const id = crypto.randomUUID();
       const createdAt = new Date().toISOString();
@@ -25,23 +34,20 @@ app.http("CreateRecipe", {
         rowKey: id,
         title,
         instructions,
-        // Table Storage stores primitives; store array as JSON string
-        ingredientsJson: JSON.stringify(ingredients),
+        ingredientsJson: JSON.stringify(cleanedIngredients),
         createdAt,
-        imageUrl: "", // set later by UploadRecipeImage
+        imageUrl: "",
       };
 
       const table = getRecipesTableClient();
-      await table.createTable().catch(() => {}); // create if missing
       await table.createEntity(entity);
-
 
       return {
         status: 201,
         jsonBody: {
           id,
           title,
-          ingredients,
+          ingredients: cleanedIngredients,
           instructions,
           imageUrl: "",
           createdAt,
@@ -49,8 +55,10 @@ app.http("CreateRecipe", {
       };
     } catch (err) {
       context.error(err);
-      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
+      return {
+        status: 500,
+        jsonBody: { error: "Server error", details: String(err?.message || err) },
+      };
     }
   },
 });
-
