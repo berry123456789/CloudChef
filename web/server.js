@@ -1,19 +1,14 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
+const express = require("express");
+const path = require("path");
 
 const app = express();
+const dist = path.join(__dirname, "dist");
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+app.use(express.static(dist));
 
-const distPath = path.join(__dirname, "dist");
-
-app.use(express.static(distPath));
-
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(distPath, "index.html"));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(dist, "index.html"));
 });
 
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log(`CloudChef web running on port ${port}`));
+app.listen(port, () => console.log("Web listening on", port));
