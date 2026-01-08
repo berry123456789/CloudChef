@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show workflow + npm versions (debug)
+      - name: Show workflow + npm versions
         run: |
           node -v
           npm -v
@@ -27,7 +27,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install (IMPORTANT: npm install, NOT npm ci)
+      - name: Install
         working-directory: web
         run: npm install
 
@@ -37,16 +37,16 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      - name: Prune devDependencies (keep only prod deps like serve)
+      - name: Prune devDependencies
         working-directory: web
         run: npm prune --omit=dev
 
-      - name: Create deploy zip (dist + prod node_modules)
+      - name: Create deploy zip
         run: |
           cd web
           zip -r ../webapp.zip dist package.json package-lock.json node_modules
 
-      - name: Deploy to Azure Web App (Publish Profile)
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
           app-name: cloudchef-webapp
