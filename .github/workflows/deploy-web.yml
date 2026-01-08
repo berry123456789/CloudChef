@@ -31,9 +31,14 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      - name: Deploy dist to Azure Web App
-        uses: azure/webapps-deploy@v3
+      # IMPORTANT: zip the dist contents (Azure WebApp expects a zip)
+      - name: Zip dist
+        working-directory: web/dist
+        run: zip -r ../dist.zip .
+
+      - name: Deploy to Azure Web App (Publish Profile)
+        uses: azure/webapps-deploy@v2
         with:
           app-name: cloudchef-webapp
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: web/dist
+          package: web/dist.zip
