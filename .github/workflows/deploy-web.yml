@@ -21,7 +21,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install
+      - name: Install (npm install - NOT ci)
         working-directory: web
         run: npm install --no-audit --no-fund
 
