@@ -14,24 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug: show any npm ci usage in workflows
-        shell: bash
-        run: |
-          echo "Searching for 'npm ci' in .github/workflows..."
-          grep -R "npm ci" -n .github/workflows || true
-
       - name: Use Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      - name: Clean + Install (no ci)
-        shell: bash
+      - name: Install
         working-directory: web
-        run: |
-          rm -rf node_modules
-          rm -f package-lock.json
-          npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Build
         working-directory: web
@@ -39,26 +31,12 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      - name: Prune devDependencies (keep only prod deps like serve)
+      - name: Prune devDependencies
         working-directory: web
         run: npm prune --omit=dev
 
-      - name: Sanity check (dist + serve exist)
-        shell: bash
-        working-directory: web
-        run: |
-          test -f dist/index.html
-          test -d node_modules/serve
-          node -p "require('./node_modules/serve/package.json').version"
-          echo "OK: dist + serve present"
-
       - name: Create deploy zip
-        shell: bash
-        run: |
-          cd web
-          zip -r ../webapp.zip dist package.json package-lock.json node_modules
-          echo "=== ZIP CONTENTS (top) ==="
-          unzip -l ../webapp.zip | head -n 80
+        run: cd web && zip -r ../webapp.zip dist package.json package-lock.json node_modules
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
