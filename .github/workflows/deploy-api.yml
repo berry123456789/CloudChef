@@ -23,7 +23,7 @@ jobs:
       # Optional sanity check (runs in api folder)
       - name: Install deps (for validation only)
         working-directory: api
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       # IMPORTANT: do not deploy node_modules
       - name: Remove node_modules before deploy
