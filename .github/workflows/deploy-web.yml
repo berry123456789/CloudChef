@@ -14,12 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show workflow + npm versions
-        run: |
-          node -v
-          npm -v
-          echo "Running from commit: $GITHUB_SHA"
-
       - name: Use Node
         uses: actions/setup-node@v4
         with:
@@ -37,14 +31,24 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      - name: Prune devDependencies
+      - name: Prune devDependencies (keep only prod deps)
         working-directory: web
         run: npm prune --omit=dev
+
+      - name: Sanity check (serve + dist exist)
+        working-directory: web
+        run: |
+          test -d dist
+          test -f package.json
+          test -d node_modules/serve
+          node -p "require('./node_modules/serve/package.json').version"
 
       - name: Create deploy zip
         run: |
           cd web
           zip -r ../webapp.zip dist package.json package-lock.json node_modules
+          echo "=== ZIP CONTENTS (top) ==="
+          unzip -l ../webapp.zip | head -n 60
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
