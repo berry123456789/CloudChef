@@ -1,20 +1,24 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import Layout from "./components/Layout.jsx";
-import Recipes from "./pages/Recipes.jsx";
-import Recipe from "./pages/Recipe.jsx";
-import Create from "./pages/Create.jsx";
-import Edit from "./pages/Edit.jsx";
+import Layout from "./components/Layout";
+
+import Recipes from "./pages/Recipes";
+import Recipe from "./pages/Recipe";
+import Create from "./pages/Create";
+import Edit from "./pages/Edit";
 
 export default function App() {
   return (
-    <Layout>
-      <Routes>
+    <Routes>
+      <Route element={<Layout />}>
         <Route path="/" element={<Recipes />} />
-        <Route path="/recipes/:id" element={<Recipe />} />
+        <Route path="/recipes" element={<Navigate to="/" replace />} />
+
         <Route path="/create" element={<Create />} />
+        <Route path="/recipe/:id" element={<Recipe />} />
         <Route path="/edit/:id" element={<Edit />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
+      </Route>
+    </Routes>
   );
 }
