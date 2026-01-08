@@ -6,22 +6,24 @@ on:
     paths:
       - "web/**"
       - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Use Node
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      - name: Install (npm install - NOT ci)
+      - name: Install deps
         working-directory: web
         run: npm install --no-audit --no-fund
 
@@ -31,12 +33,15 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
+      # Keep deployment small: only prod deps
       - name: Prune devDependencies
         working-directory: web
         run: npm prune --omit=dev
 
       - name: Create deploy zip
-        run: cd web && zip -r ../webapp.zip dist package.json package-lock.json node_modules
+        run: |
+          cd web
+          zip -r ../webapp.zip dist package.json package-lock.json node_modules
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
