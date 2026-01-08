@@ -21,6 +21,17 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # 🔍 DEBUG STEP (DO NOT SKIP THIS)
+      - name: Debug web/package.json
+        working-directory: web
+        run: |
+          echo "===== COMMIT ====="
+          git rev-parse HEAD
+          echo "===== FILE CONTENT (line numbers) ====="
+          cat -n package.json
+          echo "===== TRY JSON PARSE ====="
+          node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).scripts.start"
+
       - name: Install
         working-directory: web
         run: npm install
@@ -31,7 +42,6 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      
       - name: Create deploy zip
         run: |
           cd web
