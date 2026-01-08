@@ -21,20 +21,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # 🔍 DEBUG STEP (DO NOT SKIP THIS)
-      - name: Debug web/package.json
-        working-directory: web
-        run: |
-          echo "===== COMMIT ====="
-          git rev-parse HEAD
-          echo "===== FILE CONTENT (line numbers) ====="
-          cat -n package.json
-          echo "===== TRY JSON PARSE ====="
-          node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).scripts.start"
-
       - name: Install
         working-directory: web
-        run: npm install
+        run: npm ci
 
       - name: Build
         working-directory: web
@@ -42,10 +31,33 @@ jobs:
           VITE_API_BASE: https://cloudchef-api-bpbpc5fadph9ead3.uksouth-01.azurewebsites.net/api
         run: npm run build
 
-      - name: Create deploy zip
+      # SPA rewrite for Azure App Service (so refresh + deep links work)
+      - name: Add SPA rewrite (web.config)
         run: |
-          cd web
-          zip -r ../webapp.zip dist server.cjs package.json package-lock.json
+          cat > web/dist/web.config <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.webServer>
+              <rewrite>
+                <rules>
+                  <rule name="SPA" stopProcessing="true">
+                    <match url=".*" />
+                    <conditions logicalGrouping="MatchAll">
+                      <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+                      <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+                    </conditions>
+                    <action type="Rewrite" url="/" />
+                  </rule>
+                </rules>
+              </rewrite>
+            </system.webServer>
+          </configuration>
+          EOF
+
+      - name: Create deploy zip (dist only)
+        run: |
+          cd web/dist
+          zip -r ../../webapp.zip .
 
       - name: Deploy to Azure Web App (Publish Profile)
         uses: azure/webapps-deploy@v2
