@@ -1,30 +1,53 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-
-const AuthContext = createContext(null);
+import { loginUser as apiLoginUser, registerUser as apiRegisterUser } from "../lib/api.js";
 
 const STORAGE_KEY = "cloudchef_auth";
 
-export function AuthProvider({ children }) {
-  const [token, setToken] = useState("");
-  const [email, setEmail] = useState("");
+const AuthContext = createContext(null);
 
-  // restore session
+export function AuthProvider({ children }) {
+  const [email, setEmail] = useState("");
+  const [token, setToken] = useState("");
+  const [ready, setReady] = useState(false);
+
+  // Restore session on first load
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      setToken(parsed?.token || "");
-      setEmail(parsed?.email || "");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.email && parsed?.token) {
+          setEmail(String(parsed.email));
+          setToken(String(parsed.token));
+        }
+      }
     } catch {
-      // ignore
+      // ignore corrupted storage
+    } finally {
+      setReady(true);
     }
   }, []);
 
-  function setSession(nextEmail, nextToken) {
-    setEmail(nextEmail);
-    setToken(nextToken);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ email: nextEmail, token: nextToken }));
+  // Persist session whenever it changes
+  useEffect(() => {
+    if (!ready) return;
+    if (email && token) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ email, token }));
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [email, token, ready]);
+
+  async function login(emailInput, password) {
+    const res = await apiLoginUser(emailInput, password);
+    setEmail(res.email);
+    setToken(res.token);
+    return res;
+  }
+
+  async function register(emailInput, password) {
+    const res = await apiRegisterUser(emailInput, password);
+    return res;
   }
 
   function logout() {
@@ -35,20 +58,22 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      isAuthed: Boolean(token),
-      token,
+      ready,
+      isAuthed: Boolean(email && token),
       email,
-      setSession,
+      token,
+      login,
+      register,
       logout,
     }),
-    [token, email]
+    [ready, email, token]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
-  return ctx;
+  const v = useContext(AuthContext);
+  if (!v) throw new Error("useAuth must be used inside <AuthProvider>");
+  return v;
 }
