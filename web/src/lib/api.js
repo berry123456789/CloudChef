@@ -1,25 +1,19 @@
-export const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+// web/src/lib/api.js
+
+// Normalise base so it never ends with a trailing slash
+export const API_BASE = String(import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 export function apiOk() {
   return Boolean(API_BASE) && API_BASE.startsWith("http");
 }
 
-function authHeaders() {
-  try {
-    const raw = localStorage.getItem("auth");
-    const parsed = raw ? JSON.parse(raw) : null;
-    const token = parsed?.token;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
+// ---------- internal helper (JSON requests) ----------
 async function requestJson(path, options = {}) {
+  if (!API_BASE) throw new Error("VITE_API_BASE missing");
+
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "content-type": "application/json",
-      ...authHeaders(),
       ...(options.headers || {}),
     },
     ...options,
@@ -27,15 +21,16 @@ async function requestJson(path, options = {}) {
 
   const text = await res.text();
   let data = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    data = text;
+    data = text; // fallback (plain text)
   }
 
   if (!res.ok) {
     const msg =
-      (data && data.error) ||
+      (data && typeof data === "object" && data.error) ||
       (typeof data === "string" && data) ||
       `HTTP ${res.status}`;
     throw new Error(msg);
@@ -45,15 +40,11 @@ async function requestJson(path, options = {}) {
 }
 
 // ---------- Recipes ----------
-export function listRecipes({ continuationToken = "", q = "", mealType = "", dietary = [] } = {}) {
-  const params = new URLSearchParams();
-  if (continuationToken) params.set("continuationToken", continuationToken);
-  if (q) params.set("q", q);
-  if (mealType) params.set("mealType", mealType);
-  if (dietary && dietary.length) params.set("dietary", dietary.join(","));
-
-  const qs = params.toString();
-  return requestJson(`/ListRecipes${qs ? `?${qs}` : ""}`, { method: "GET" });
+export function listRecipes(continuationToken = "") {
+  const q = continuationToken
+    ? `?continuationToken=${encodeURIComponent(continuationToken)}`
+    : "";
+  return requestJson(`/ListRecipes${q}`, { method: "GET" });
 }
 
 export function getRecipe(id) {
@@ -74,15 +65,51 @@ export function updateRecipe(id, payload) {
   });
 }
 
-export function deleteRecipe(id) {
-  return fetch(`${API_BASE}/DeleteRecipe?id=${encodeURIComponent(id)}`, {
+export async function deleteRecipe(id) {
+  if (!API_BASE) throw new Error("VITE_API_BASE missing");
+
+  const res = await fetch(`${API_BASE}/DeleteRecipe?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: { ...authHeaders() },
-  }).then(async (res) => {
-    if (res.status === 204) return;
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
   });
+
+  if (res.status === 204) return;
+
+  const text = await res.text();
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+// IMPORTANT: Upload is multipart/form-data, NOT JSON
+export async function uploadRecipeImage(id, file) {
+  if (!API_BASE) throw new Error("VITE_API_BASE missing");
+  if (!id) throw new Error("Recipe id required");
+  if (!file) throw new Error("File required");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_BASE}/UploadRecipeImage?id=${encodeURIComponent(id)}`, {
+    method: "POST",
+    body: form,
+  });
+
+  const text = await res.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    const msg =
+      (data && typeof data === "object" && data.error) ||
+      (typeof data === "string" && data) ||
+      `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return data;
 }
 
 // ---------- Auth ----------
