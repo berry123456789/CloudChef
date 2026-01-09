@@ -60,14 +60,9 @@ export default function Create() {
         instructions: instructions.trim(),
         ingredients: splitIngredients(ingredientsText),
 
-        // ✅ REQUIRED BY BACKEND
-        mealTypes:
-          mealType && mealType !== "Any meal"
-            ? [mealType.toLowerCase()]
-            : [],
-
-        dietaryTags: dietaryList,
-        tags: [],
+        // ✅ IMPORTANT: match backend field names
+        mealType: mealType === "Any meal" ? "" : mealType.toLowerCase(),
+        dietaryTags: dietaryList, // ✅ (not "dietary")
       };
 
       const created = await createRecipe(payload);
@@ -79,9 +74,7 @@ export default function Create() {
         created?.rowKey ||
         created?.key;
 
-      if (!id) {
-        throw new Error("Recipe created but no id returned by API.");
-      }
+      if (!id) throw new Error("Recipe created but no id returned by API.");
 
       if (imageFile) {
         await uploadRecipeImage(id, imageFile);
@@ -110,20 +103,12 @@ export default function Create() {
         <Card title="Details">
           <div className="space-y-4">
             <div>
-              <div className="mb-2 text-sm font-medium text-slate-200">
-                Title
-              </div>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
+              <div className="mb-2 text-sm font-medium text-slate-200">Title</div>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
 
             <div>
-              <div className="mb-2 text-sm font-medium text-slate-200">
-                Instructions
-              </div>
+              <div className="mb-2 text-sm font-medium text-slate-200">Instructions</div>
               <Textarea
                 rows={6}
                 value={instructions}
@@ -145,9 +130,7 @@ export default function Create() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <div className="mb-2 text-sm font-medium text-slate-200">
-                  Meal type
-                </div>
+                <div className="mb-2 text-sm font-medium text-slate-200">Meal type</div>
                 <select
                   className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   value={mealType}
@@ -162,9 +145,7 @@ export default function Create() {
               </div>
 
               <div>
-                <div className="mb-2 text-sm font-medium text-slate-200">
-                  Dietary
-                </div>
+                <div className="mb-2 text-sm font-medium text-slate-200">Dietary</div>
                 <div className="flex flex-wrap gap-2">
                   {DIETARY.map((t) => {
                     const k = normalizeDietTag(t);
@@ -197,18 +178,12 @@ export default function Create() {
               type="file"
               accept="image/*"
               className="text-sm text-slate-200"
-              onChange={(e) =>
-                setImageFile(e.target.files?.[0] || null)
-              }
+              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
             />
             {imageFile ? (
-              <div className="text-sm text-slate-300">
-                Selected: {imageFile.name}
-              </div>
+              <div className="text-sm text-slate-300">Selected: {imageFile.name}</div>
             ) : (
-              <div className="text-sm text-slate-500">
-                No file selected
-              </div>
+              <div className="text-sm text-slate-500">No file selected</div>
             )}
           </div>
         </Card>
@@ -217,12 +192,7 @@ export default function Create() {
           <Button type="submit" disabled={loading}>
             {loading ? "Creating…" : "Create"}
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => nav(-1)}
-            disabled={loading}
-          >
+          <Button type="button" variant="secondary" onClick={() => nav(-1)} disabled={loading}>
             Cancel
           </Button>
         </div>
