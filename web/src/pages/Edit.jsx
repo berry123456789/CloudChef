@@ -152,4 +152,132 @@ export default function Edit() {
       return;
     }
     load();
-    // eslint-disable-next-l
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          to={`/recipes/${id}`}
+          className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-white/15"
+        >
+          ← Back
+        </Link>
+        <Button onClick={load} disabled={loading}>
+          Refresh
+        </Button>
+        <div className="ml-auto">
+          <StatusPill loading={loading} />
+        </div>
+      </div>
+
+      <ErrorBanner error={error} />
+
+      <Card title={`Edit recipe: ${id}`}>
+        <div className="space-y-4">
+          <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Title" />
+          <Textarea
+            value={editInstructions}
+            onChange={(e) => setEditInstructions(e.target.value)}
+            placeholder="Instructions"
+            rows={4}
+          />
+          <Input
+            value={editIngredientsText}
+            onChange={(e) => setEditIngredientsText(e.target.value)}
+            placeholder="Ingredients (comma separated)"
+          />
+
+          {/* NEW: Meal + Dietary controls */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-2 text-sm font-medium text-slate-200">Meal type</div>
+              <select
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                value={mealType}
+                onChange={(e) => setMealType(e.target.value)}
+              >
+                {MEALS.map((m) => (
+                  <option key={m} value={m} className="bg-slate-950">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-slate-200">Dietary</div>
+              <div className="flex flex-wrap gap-2">
+                {DIETARY.map((t) => {
+                  const k = normalizeDietTag(t);
+                  const active = dietary.has(k);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleDietTag(t)}
+                      className={[
+                        "rounded-full border px-3 py-1 text-sm transition",
+                        active
+                          ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                          : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10",
+                      ].join(" ")}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onSave} disabled={loading}>
+              Save
+            </Button>
+            <Button onClick={() => navigate(`/recipes/${id}`)} disabled={loading} variant="secondary">
+              Cancel
+            </Button>
+          </div>
+
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <div className="mb-2 text-sm font-semibold text-slate-100">Upload image</div>
+
+            <input
+              type="file"
+              accept="image/*"
+              className="block w-full text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-100 hover:file:bg-white/15"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+
+            <div className="mt-3 flex gap-2">
+              <Button onClick={onUpload} disabled={loading} variant="secondary">
+                Upload
+              </Button>
+            </div>
+
+            {/* SHOW image (not just URL) */}
+            {loaded?.imageUrl ? (
+              <div className="mt-4 space-y-2">
+                <img
+                  src={loaded.imageUrl}
+                  alt="Recipe"
+                  className="max-h-72 w-full rounded-xl border border-white/10 object-cover"
+                  onError={() => {
+                    // If blob is private or content-type wrong, this will fail.
+                    // Keep showing url for debugging.
+                  }}
+                />
+                <div className="text-xs text-slate-400">
+                  Current imageUrl:{" "}
+                  <span className="break-all font-mono text-slate-200">{loaded.imageUrl}</span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
