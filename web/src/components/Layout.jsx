@@ -1,6 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { API_BASE } from "../lib/api.js";
 
 function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
@@ -8,7 +7,7 @@ function classNames(...xs) {
 
 export default function Layout() {
   const navigate = useNavigate();
-  const { isAuthed, email, logout, ready } = useAuth();
+  const { isAuthed, logout } = useAuth();
 
   const linkBase =
     "rounded-xl px-4 py-2 text-sm font-semibold transition border border-white/10";
@@ -24,12 +23,8 @@ export default function Layout() {
             <div className="mt-1 text-slate-300">
               Manage recipes • Upload images • CRUD demo
             </div>
-            <div className="mt-1 text-sm text-slate-400">
-              API: {API_BASE || "(missing VITE_API_BASE)"}
-            </div>
-            <div className="mt-2 text-sm text-slate-300">
-              {!ready ? "Loading session..." : isAuthed ? `Signed in as ${email}` : "Not signed in"}
-            </div>
+
+            {/* ✅ removed API line + session text */}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
