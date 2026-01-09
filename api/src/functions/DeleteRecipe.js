@@ -1,14 +1,24 @@
-// api/src/functions/DeleteRecipe.js
 const { app } = require("@azure/functions");
 const { getRecipesTableClient, getBlobContainerClient } = require("../shared/storage");
 const { requireUserEmail } = require("../shared/auth");
+
+function isLogicAppCall(request) {
+  const secret = request.headers.get("x-la-secret");
+  return secret && process.env.LA_SHARED_SECRET && secret === process.env.LA_SHARED_SECRET;
+}
 
 app.http("DeleteRecipe", {
   methods: ["DELETE", "POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      const userEmail = requireUserEmail(request);
+      const la = isLogicAppCall(request);
+
+      // ✅ if NOT logic app, require normal auth
+      let userEmail = "logicapp@system";
+      if (!la) {
+        userEmail = requireUserEmail(request);
+      }
 
       const url = new URL(request.url);
       const id = (url.searchParams.get("id") || "").trim();
@@ -25,12 +35,11 @@ app.http("DeleteRecipe", {
 
       const owner = (entity.ownerEmail || "").trim().toLowerCase();
 
-      // Owned by someone else => block
-      if (owner && owner !== userEmail) {
+      // ✅ only enforce owner check for real users, NOT logic app
+      if (!la && owner && owner !== userEmail) {
         return { status: 403, jsonBody: { error: "Not allowed to delete this recipe" } };
       }
 
-      // Legacy (no owner) => allow delete
       const blobName = entity.imageBlobName || "";
       if (blobName) {
         try {
@@ -42,7 +51,6 @@ app.http("DeleteRecipe", {
       }
 
       await table.deleteEntity("recipe", id);
-
       return { status: 204 };
     } catch (err) {
       const status = err?.status || 500;
