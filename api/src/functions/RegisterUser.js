@@ -1,43 +1,45 @@
-import { TableClient } from "@azure/data-tables";
-import bcrypt from "bcryptjs";
+const { app } = require("@azure/functions");
+const { TableClient } = require("@azure/data-tables");
+const bcrypt = require("bcryptjs");
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const usersTable = TableClient.fromConnectionString(connectionString, "Users");
 
-export default async function (context, req) {
-  try {
-    const { email, password } = req.body || {};
-
-    if (!email || !password) {
-      context.res = { status: 400, body: "Email and password required" };
-      return;
-    }
-
-    const emailLower = email.toLowerCase();
-
-    // check if user exists
+app.http("RegisterUser", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "RegisterUser",
+  handler: async (request, context) => {
     try {
-      await usersTable.getEntity("USER", emailLower);
-      context.res = { status: 409, body: "User already exists" };
-      return;
-    } catch {
-      // expected if not found
+      const { email, password } = await request.json();
+
+      if (!email || !password) {
+        return { status: 400, jsonBody: { error: "Email and password required" } };
+      }
+
+      const emailLower = email.toLowerCase();
+
+      // check if user exists
+      try {
+        await usersTable.getEntity("USER", emailLower);
+        return { status: 409, jsonBody: { error: "User already exists" } };
+      } catch {
+        // not found is expected
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      await usersTable.createEntity({
+        partitionKey: "USER",
+        rowKey: emailLower,
+        passwordHash,
+        createdAt: new Date().toISOString(),
+      });
+
+      return { status: 201, jsonBody: { email: emailLower } };
+    } catch (err) {
+      context.error(err);
+      return { status: 500, jsonBody: { error: err.message } };
     }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    await usersTable.createEntity({
-      partitionKey: "USER",
-      rowKey: emailLower,
-      passwordHash,
-      createdAt: new Date().toISOString()
-    });
-
-    context.res = {
-      status: 201,
-      body: { email: emailLower }
-    };
-  } catch (err) {
-    context.res = { status: 500, body: err.message };
-  }
-}
+  },
+});
