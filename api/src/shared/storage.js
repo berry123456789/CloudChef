@@ -1,17 +1,29 @@
+// api/src/shared/storage.js
 const { TableClient } = require("@azure/data-tables");
 const { BlobServiceClient } = require("@azure/storage-blob");
 
-const TABLE_NAME = "Recipes";
+const RECIPES_TABLE = "Recipes";
+const USERS_TABLE = "Users";
 const BLOB_CONTAINER = "recipe-media";
 
 function getConnectionString() {
-  const cs = process.env.AzureWebJobsStorage;
-  if (!cs) throw new Error("Missing AzureWebJobsStorage setting.");
+  // Azure Functions uses this in production
+  const cs =
+    process.env.AZURE_STORAGE_CONNECTION_STRING ||
+    process.env.AzureWebJobsStorage;
+
+  if (!cs) {
+    throw new Error("Missing AZURE_STORAGE_CONNECTION_STRING / AzureWebJobsStorage");
+  }
   return cs;
 }
 
 function getRecipesTableClient() {
-  return TableClient.fromConnectionString(getConnectionString(), TABLE_NAME);
+  return TableClient.fromConnectionString(getConnectionString(), RECIPES_TABLE);
+}
+
+function getUsersTableClient() {
+  return TableClient.fromConnectionString(getConnectionString(), USERS_TABLE);
 }
 
 function getBlobContainerClient() {
@@ -20,8 +32,10 @@ function getBlobContainerClient() {
 }
 
 module.exports = {
-  TABLE_NAME,
+  RECIPES_TABLE,
+  USERS_TABLE,
   BLOB_CONTAINER,
   getRecipesTableClient,
+  getUsersTableClient,
   getBlobContainerClient,
 };
