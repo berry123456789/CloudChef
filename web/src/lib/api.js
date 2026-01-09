@@ -1,36 +1,61 @@
 // web/src/lib/api.js
 
-// Normalise base so it never ends with a trailing slash
-export const API_BASE = String(import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+export const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 export function apiOk() {
   return Boolean(API_BASE) && API_BASE.startsWith("http");
 }
 
-// ---------- internal helper (JSON requests) ----------
-async function requestJson(path, options = {}) {
+// Where we store auth (match what AuthContext uses)
+const TOKEN_KEY = "cloudchef_token";
+
+function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function request(path, options = {}) {
   if (!API_BASE) throw new Error("VITE_API_BASE missing");
 
+  const token = getToken();
+
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  // Only add JSON content-type when we actually send JSON
+  const hasBody = options.body !== undefined && options.body !== null;
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  if (hasBody && !isFormData && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+
+  // Add auth header if token exists
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
     ...options,
+    headers,
   });
 
+  // Try parse json if present
   const text = await res.text();
   let data = null;
-
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    data = text; // fallback (plain text)
+    data = text;
   }
 
   if (!res.ok) {
     const msg =
-      (data && typeof data === "object" && data.error) ||
+      (data && data.error) ||
       (typeof data === "string" && data) ||
       `HTTP ${res.status}`;
     throw new Error(msg);
@@ -44,84 +69,64 @@ export function listRecipes(continuationToken = "") {
   const q = continuationToken
     ? `?continuationToken=${encodeURIComponent(continuationToken)}`
     : "";
-  return requestJson(`/ListRecipes${q}`, { method: "GET" });
+  return request(`/ListRecipes${q}`, { method: "GET" });
 }
 
 export function getRecipe(id) {
-  return requestJson(`/GetRecipe?id=${encodeURIComponent(id)}`, { method: "GET" });
+  return request(`/GetRecipe?id=${encodeURIComponent(id)}`, { method: "GET" });
 }
 
 export function createRecipe(payload) {
-  return requestJson(`/CreateRecipe`, {
+  return request(`/CreateRecipe`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function updateRecipe(id, payload) {
-  return requestJson(`/UpdateRecipe?id=${encodeURIComponent(id)}`, {
+  return request(`/UpdateRecipe?id=${encodeURIComponent(id)}`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function deleteRecipe(id) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
-
+  // Delete returns 204 sometimes
+  const token = getToken();
   const res = await fetch(`${API_BASE}/DeleteRecipe?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   if (res.status === 204) return;
-
   const text = await res.text();
   throw new Error(text || `HTTP ${res.status}`);
 }
 
-// IMPORTANT: Upload is multipart/form-data, NOT JSON
+// Upload image (FormData) — this was missing and caused your console error
 export async function uploadRecipeImage(id, file) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
-  if (!id) throw new Error("Recipe id required");
-  if (!file) throw new Error("File required");
+  if (!file) throw new Error("No file selected");
 
-  const form = new FormData();
-  form.append("file", file);
+  const fd = new FormData();
+  fd.append("file", file);
 
-  const res = await fetch(`${API_BASE}/UploadRecipeImage?id=${encodeURIComponent(id)}`, {
+  // FormData => DO NOT set content-type manually
+  return request(`/UploadRecipeImage?id=${encodeURIComponent(id)}`, {
     method: "POST",
-    body: form,
+    body: fd,
   });
-
-  const text = await res.text();
-  let data = null;
-
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!res.ok) {
-    const msg =
-      (data && typeof data === "object" && data.error) ||
-      (typeof data === "string" && data) ||
-      `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-
-  return data;
 }
 
 // ---------- Auth ----------
 export function registerUser(email, password) {
-  return requestJson(`/RegisterUser`, {
+  return request(`/RegisterUser`, {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
 }
 
 export function loginUser(email, password) {
-  return requestJson(`/LoginUser`, {
+  return request(`/LoginUser`, {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
