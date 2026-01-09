@@ -1,4 +1,3 @@
-// web/src/pages/Create.jsx
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Input, Textarea, Button, ErrorBanner } from "../components/ui.jsx";
@@ -8,7 +7,6 @@ const MEALS = ["Any meal", "Breakfast", "Lunch", "Dinner", "Snack", "Dessert"];
 const DIETARY = ["Vegan", "Vegetarian", "Gluten-free", "Dairy-free"];
 
 function normalizeDietTag(t) {
-  // store consistent values
   const x = String(t || "").toLowerCase().trim();
   if (x === "gluten-free") return "gluten-free";
   if (x === "dairy-free") return "dairy-free";
@@ -62,15 +60,18 @@ export default function Create() {
         instructions: instructions.trim(),
         ingredients: splitIngredients(ingredientsText),
 
-        // these extra fields are safe for Cosmos/NoSQL-style storage;
-        // if your API ignores unknown fields, it still works.
-        mealType: mealType === "Any meal" ? "" : mealType,
-        dietary: dietaryList,
+        // ✅ REQUIRED BY BACKEND
+        mealTypes:
+          mealType && mealType !== "Any meal"
+            ? [mealType.toLowerCase()]
+            : [],
+
+        dietaryTags: dietaryList,
+        tags: [],
       };
 
       const created = await createRecipe(payload);
 
-      // Try multiple id shapes (depending on backend response)
       const id =
         created?.id ||
         created?.recipeId ||
@@ -109,12 +110,20 @@ export default function Create() {
         <Card title="Details">
           <div className="space-y-4">
             <div>
-              <div className="mb-2 text-sm font-medium text-slate-200">Title</div>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <div className="mb-2 text-sm font-medium text-slate-200">
+                Title
+              </div>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
             </div>
 
             <div>
-              <div className="mb-2 text-sm font-medium text-slate-200">Instructions</div>
+              <div className="mb-2 text-sm font-medium text-slate-200">
+                Instructions
+              </div>
               <Textarea
                 rows={6}
                 value={instructions}
@@ -136,7 +145,9 @@ export default function Create() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <div className="mb-2 text-sm font-medium text-slate-200">Meal type</div>
+                <div className="mb-2 text-sm font-medium text-slate-200">
+                  Meal type
+                </div>
                 <select
                   className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   value={mealType}
@@ -151,7 +162,9 @@ export default function Create() {
               </div>
 
               <div>
-                <div className="mb-2 text-sm font-medium text-slate-200">Dietary</div>
+                <div className="mb-2 text-sm font-medium text-slate-200">
+                  Dietary
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {DIETARY.map((t) => {
                     const k = normalizeDietTag(t);
@@ -184,12 +197,18 @@ export default function Create() {
               type="file"
               accept="image/*"
               className="text-sm text-slate-200"
-              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+              onChange={(e) =>
+                setImageFile(e.target.files?.[0] || null)
+              }
             />
             {imageFile ? (
-              <div className="text-sm text-slate-300">Selected: {imageFile.name}</div>
+              <div className="text-sm text-slate-300">
+                Selected: {imageFile.name}
+              </div>
             ) : (
-              <div className="text-sm text-slate-500">No file selected</div>
+              <div className="text-sm text-slate-500">
+                No file selected
+              </div>
             )}
           </div>
         </Card>
@@ -198,7 +217,12 @@ export default function Create() {
           <Button type="submit" disabled={loading}>
             {loading ? "Creating…" : "Create"}
           </Button>
-          <Button type="button" variant="secondary" onClick={() => nav(-1)} disabled={loading}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => nav(-1)}
+            disabled={loading}
+          >
             Cancel
           </Button>
         </div>
