@@ -1,28 +1,40 @@
 const { app } = require("@azure/functions");
 const { getRecipesTableClient, getBlobContainerClient } = require("../shared/storage");
+const { requireUser } = require("../shared/auth");
 
 app.http("DeleteRecipe", {
-  methods: ["DELETE", "POST"], // DELETE is proper; POST is Postman-friendly if needed
+  methods: ["DELETE", "POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
+      // Require login
+      const auth = requireUser(request);
+      if (!auth.ok) return { status: auth.status, jsonBody: { error: auth.error } };
+      const email = auth.email;
+
       const url = new URL(request.url);
       const id = (url.searchParams.get("id") || "").trim();
       if (!id) return { status: 400, jsonBody: { error: "id query parameter is required" } };
 
       const table = getRecipesTableClient();
 
-      // 1) Read entity (so we can also delete the blob if present)
       let entity;
       try {
         entity = await table.getEntity("recipe", id);
-      } catch (e) {
-        // If it doesn't exist, treat as already deleted
-        // (Azure Tables SDK usually throws with statusCode 404)
+      } catch {
         return { status: 404, jsonBody: { error: "Recipe not found" } };
       }
 
-      // 2) Delete blob if we stored blob name
+      // Ownership check
+      const owner = (entity.createdBy || "").toLowerCase();
+      if (!owner) {
+        return { status: 403, jsonBody: { error: "Recipe has no owner set (legacy data)" } };
+      }
+      if (owner !== email.toLowerCase()) {
+        return { status: 403, jsonBody: { error: "You can only delete your own recipes" } };
+      }
+
+      // Delete blob if stored
       const blobName = entity.imageBlobName || "";
       if (blobName) {
         try {
@@ -30,15 +42,11 @@ app.http("DeleteRecipe", {
           const blobClient = container.getBlobClient(blobName);
           await blobClient.deleteIfExists();
         } catch (blobErr) {
-          // Don’t fail the whole delete if blob delete fails — log it
           context.warn(`Blob delete failed for ${blobName}: ${blobErr?.message || blobErr}`);
         }
       }
 
-      // 3) Delete the table entity
       await table.deleteEntity("recipe", id);
-
-      // 204 is the clean REST response for delete
       return { status: 204 };
     } catch (err) {
       context.error(err);
