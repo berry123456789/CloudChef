@@ -1,196 +1,228 @@
 // web/src/pages/Recipes.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listRecipes, apiOk } from "../lib/api.js";
-import { Card, Input, Button, StatusPill, ErrorBanner } from "../components/ui.jsx";
+import { Card, Input, Button, ErrorBanner, StatusPill } from "../components/ui.jsx";
+import { listRecipes } from "../lib/api.js";
 
-const MEAL_OPTIONS = [
-  { value: "any", label: "Any meal" },
-  { value: "breakfast", label: "Breakfast" },
-  { value: "lunch", label: "Lunch" },
-  { value: "dinner", label: "Dinner" },
-  { value: "snack", label: "Snack" },
-  { value: "dessert", label: "Dessert" },
-];
+const MEALS = ["Any meal", "Breakfast", "Lunch", "Dinner", "Snack", "Dessert"];
+const DIETARY = ["Vegan", "Vegetarian", "Gluten-free", "Dairy-free"];
 
-const DIETARY_OPTIONS = [
-  { key: "vegan", label: "Vegan" },
-  { key: "vegetarian", label: "Vegetarian" },
-  { key: "glutenFree", label: "Gluten-free" },
-  { key: "dairyFree", label: "Dairy-free" },
-];
+function normalizeDietTag(t) {
+  const x = String(t || "").toLowerCase().trim();
+  if (x === "gluten-free") return "gluten-free";
+  if (x === "dairy-free") return "dairy-free";
+  if (x === "vegan") return "vegan";
+  if (x === "vegetarian") return "vegetarian";
+  return x;
+}
 
-function normalizeListResponse(data) {
-  // Accept many possible response shapes
+function wordsFrom(s) {
+  return String(s || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
+}
+
+function extractItemsAndToken(resp) {
+  // Support different backend shapes
+  if (Array.isArray(resp)) return { items: resp, continuationToken: "" };
+
   const items =
-    data?.recipes ||
-    data?.items ||
-    data?.value ||
-    data?.entities ||
-    data?.results ||
+    resp?.items ||
+    resp?.recipes ||
+    resp?.data ||
+    resp?.value ||
+    resp?.results ||
+    resp?.Results ||
     [];
+
   const continuationToken =
-    data?.continuationToken ||
-    data?.nextContinuationToken ||
-    data?.continuation ||
-    data?.next ||
+    resp?.continuationToken ||
+    resp?.ContinuationToken ||
+    resp?.nextContinuationToken ||
+    resp?.nextToken ||
+    resp?.next ||
     "";
+
   return { items: Array.isArray(items) ? items : [], continuationToken: continuationToken || "" };
 }
 
-function splitWords(q) {
-  return String(q || "")
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+function getId(r) {
+  return r?.id || r?.recipeId || r?.RowKey || r?.rowKey || r?.key || "";
+}
+
+function getTitle(r) {
+  return r?.title || r?.name || r?.Title || "Untitled";
+}
+
+function getInstructions(r) {
+  return r?.instructions || r?.body || r?.Instructions || "";
+}
+
+function getIngredients(r) {
+  const ing = r?.ingredients || r?.Ingredients;
+  if (Array.isArray(ing)) return ing;
+  if (typeof ing === "string") {
+    return ing
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 export default function Recipes() {
   const nav = useNavigate();
 
-  // server paging
-  const [rows, setRows] = useState([]);
-  const [continuationToken, setContinuationToken] = useState("");
+  // raw loaded data
+  const [all, setAll] = useState([]);
+  const [token, setToken] = useState("");
+  const [hasMore, setHasMore] = useState(true);
+
+  // ui state
   const [loading, setLoading] = useState(false);
-  const [noMore, setNoMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
   // filters
-  const [query, setQuery] = useState("");
-  const [meal, setMeal] = useState("any");
-  const [dietary, setDietary] = useState({
-    vegan: false,
-    vegetarian: false,
-    glutenFree: false,
-    dairyFree: false,
-  });
+  const [q, setQ] = useState("");
+  const [meal, setMeal] = useState("Any meal");
+  const [dietary, setDietary] = useState(() => new Set());
 
   const sentinelRef = useRef(null);
-  const inflightRef = useRef(false);
 
-  async function loadPage({ reset = false } = {}) {
-    if (!apiOk()) {
-      setError("VITE_API_BASE missing/invalid. Check your web app settings.");
-      return;
-    }
-    if (inflightRef.current) return;
-    if (!reset && noMore) return;
+  function toggleDietTag(tag) {
+    const k = normalizeDietTag(tag);
+    setDietary((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
 
-    inflightRef.current = true;
-    setLoading(true);
+  async function loadFirstPage() {
     setError("");
+    setLoading(true);
+    setAll([]);
+    setToken("");
+    setHasMore(true);
 
     try {
-      const tokenToUse = reset ? "" : continuationToken;
-      const data = await listRecipes(tokenToUse);
-      const { items, continuationToken: next } = normalizeListResponse(data);
+      const resp = await listRecipes("");
+      const { items, continuationToken } = extractItemsAndToken(resp);
 
-      setRows((prev) => (reset ? items : [...prev, ...items]));
-      setContinuationToken(next);
-
-      // If API returns no next token OR returned 0 items, assume no more pages
-      if (!next || items.length === 0) setNoMore(true);
-      else setNoMore(false);
+      setAll(items);
+      setToken(continuationToken);
+      setHasMore(Boolean(continuationToken));
     } catch (e) {
-      setError(String(e?.message || e));
+      setError(e?.message || "Failed to load recipes");
+      setHasMore(false);
     } finally {
       setLoading(false);
-      inflightRef.current = false;
     }
   }
 
-  function onRefresh() {
-    setNoMore(false);
-    setContinuationToken("");
-    setRows([]);
-    loadPage({ reset: true });
+  async function loadNextPage() {
+    if (!hasMore || !token || loadingMore) return;
+
+    setError("");
+    setLoadingMore(true);
+
+    try {
+      const resp = await listRecipes(token);
+      const { items, continuationToken } = extractItemsAndToken(resp);
+
+      setAll((prev) => [...prev, ...items]);
+      setToken(continuationToken);
+      setHasMore(Boolean(continuationToken));
+    } catch (e) {
+      setError(e?.message || "Failed to load more recipes");
+      // keep hasMore as-is; user can retry by scrolling again
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   // initial load
   useEffect(() => {
-    onRefresh();
+    loadFirstPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // infinite scroll observer
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
+    if (!sentinelRef.current) return;
 
-    const obs = new IntersectionObserver(
+    const el = sentinelRef.current;
+    const io = new IntersectionObserver(
       (entries) => {
-        const first = entries[0];
-        if (!first?.isIntersecting) return;
-        // Load next page when user scrolls near bottom
-        loadPage({ reset: false });
+        const hit = entries.some((e) => e.isIntersecting);
+        if (hit) loadNextPage();
       },
-      { root: null, rootMargin: "600px 0px", threshold: 0 }
+      { root: null, rootMargin: "600px 0px", threshold: 0.01 }
     );
 
-    obs.observe(el);
-    return () => obs.disconnect();
+    io.observe(el);
+    return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [continuationToken, noMore]);
+  }, [token, hasMore, loadingMore]);
 
-  // client-side filtering
   const filtered = useMemo(() => {
-    const words = splitWords(query);
-    const dietaryOn = Object.entries(dietary).filter(([, v]) => v).map(([k]) => k);
+    const qWords = wordsFrom(q);
+    const dietNeed = Array.from(dietary);
 
-    return rows.filter((r) => {
-      const title = String(r.title || "").toLowerCase();
-      const ingredients = Array.isArray(r.ingredients)
-        ? r.ingredients.map((x) => String(x).toLowerCase())
-        : [];
-      const haystack = [title, ...ingredients].join(" ");
+    return all.filter((r) => {
+      const title = getTitle(r);
+      const instructions = getInstructions(r);
+      const ingredients = getIngredients(r).join(" ");
 
-      // words must all match
-      for (const w of words) {
-        if (!haystack.includes(w)) return false;
+      // words search
+      if (qWords.length) {
+        const hay = `${title} ${ingredients} ${instructions}`.toLowerCase();
+        for (const w of qWords) {
+          if (!hay.includes(w)) return false;
+        }
       }
 
-      // meal type filter (only if recipe has it)
-      if (meal !== "any") {
-        const recipeMeal = String(r.mealType || r.meal || "").toLowerCase();
-        if (recipeMeal && recipeMeal !== meal) return false;
+      // meal filter (optional, only if recipe has mealType)
+      if (meal !== "Any meal") {
+        const mt = String(r?.mealType || r?.MealType || "").toLowerCase();
+        if (mt && mt !== meal.toLowerCase()) return false;
       }
 
-      // dietary filters (only if recipe has tags)
-      if (dietaryOn.length > 0) {
-        const tags = r.dietary || r.tags || {};
-        // allow tags as object { vegan: true } or array ["vegan"]
-        const has = (k) => {
-          if (Array.isArray(tags)) return tags.includes(k);
-          return Boolean(tags?.[k]);
-        };
+      // dietary filter (optional, only if recipe has dietary/tags)
+      if (dietNeed.length) {
+        const tags = r?.dietary || r?.tags || r?.Tags || [];
+        const norm = Array.isArray(tags)
+          ? tags.map(normalizeDietTag)
+          : String(tags || "")
+              .split(",")
+              .map((x) => normalizeDietTag(x))
+              .filter(Boolean);
 
-        // require ALL selected to be present (change to "some" if you prefer)
-        for (const k of dietaryOn) {
-          if ((r.dietary || r.tags) && !has(k)) return false;
+        for (const need of dietNeed) {
+          if (!norm.includes(need)) return false;
         }
       }
 
       return true;
     });
-  }, [rows, query, meal, dietary]);
-
-  function toggleDietary(key) {
-    setDietary((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  }, [all, q, meal, dietary]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="mx-auto w-full max-w-6xl">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-100">Recipes</h1>
-          <p className="mt-1 text-slate-300">
+          <div className="mt-1 text-sm text-slate-300">
             Search by title or ingredients. Filter by meal + dietary.
-          </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={onRefresh} disabled={loading}>
+          <Button variant="secondary" onClick={loadFirstPage} disabled={loading}>
             Refresh
           </Button>
           <Button onClick={() => nav("/create")}>Create</Button>
@@ -202,111 +234,113 @@ export default function Recipes() {
       <Card title="Search & Filters">
         <div className="space-y-4">
           <div>
-            <div className="mb-2 text-sm text-slate-200">Search (words)</div>
+            <div className="mb-2 text-sm font-medium text-slate-200">Search (words)</div>
             <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
               placeholder="e.g. chicken pasta garlic"
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <div className="mb-2 text-sm text-slate-200">Meal type</div>
+              <div className="mb-2 text-sm font-medium text-slate-200">Meal type</div>
               <select
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                 value={meal}
                 onChange={(e) => setMeal(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
               >
-                {MEAL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value} className="bg-slate-950">
-                    {o.label}
+                {MEALS.map((m) => (
+                  <option key={m} value={m} className="bg-slate-950">
+                    {m}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <div className="mb-2 text-sm text-slate-200">Dietary</div>
+              <div className="mb-2 text-sm font-medium text-slate-200">Dietary</div>
               <div className="flex flex-wrap gap-2">
-                {DIETARY_OPTIONS.map((d) => {
-                  const active = dietary[d.key];
+                {DIETARY.map((t) => {
+                  const k = normalizeDietTag(t);
+                  const active = dietary.has(k);
                   return (
                     <button
-                      key={d.key}
+                      key={t}
                       type="button"
-                      onClick={() => toggleDietary(d.key)}
+                      onClick={() => toggleDietTag(t)}
                       className={[
                         "rounded-full border px-3 py-1 text-sm transition",
                         active
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200"
-                          : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.07]",
+                          ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                          : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10",
                       ].join(" ")}
                     >
-                      {d.label}
+                      {t}
                     </button>
                   );
                 })}
-              </div>
-              <div className="mt-2 text-xs text-slate-400">
-                (Dietary filters only work on recipes that actually have dietary tags saved.)
               </div>
             </div>
           </div>
         </div>
       </Card>
 
-      <Card
-        title={`Results (${filtered.length})`}
-        right={<StatusPill loading={loading} />}
-      >
-        <div className="space-y-3">
-          {filtered.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.03]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div
-                    className="cursor-pointer text-lg font-semibold text-slate-100 hover:underline"
-                    onClick={() => nav(`/recipes/${r.id}`)}
-                    title={r.title}
+      <div className="mt-6">
+        <Card
+          title={`Results (${filtered.length})`}
+          right={
+            <div className="flex items-center gap-2">
+              <StatusPill loading={loading || loadingMore} />
+              {!hasMore && !loading && all.length > 0 ? (
+                <span className="text-sm text-slate-400">No more results.</span>
+              ) : null}
+            </div>
+          }
+        >
+          {loading ? (
+            <div className="py-6 text-slate-300">Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-6 text-slate-400">No results.</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {filtered.map((r) => {
+                const id = getId(r);
+                const title = getTitle(r);
+                const instructions = getInstructions(r);
+                const ingredients = getIngredients(r);
+
+                return (
+                  <button
+                    key={id || title}
+                    onClick={() => id && nav(`/recipes/${encodeURIComponent(id)}`)}
+                    className="text-left rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.04]"
                   >
-                    {r.title || "(untitled)"}
-                  </div>
+                    <div className="text-lg font-semibold text-slate-100">{title}</div>
 
-                  <div className="mt-1 text-sm text-slate-300 line-clamp-2">
-                    {r.instructions || ""}
-                  </div>
+                    {instructions ? (
+                      <div className="mt-1 line-clamp-2 text-sm text-slate-300">
+                        {instructions}
+                      </div>
+                    ) : null}
 
-                  <div className="mt-2 text-xs text-slate-500">ID: {r.id}</div>
-                </div>
+                    {ingredients.length ? (
+                      <div className="mt-2 text-xs text-slate-400">
+                        Ingredients: {ingredients.slice(0, 8).join(", ")}
+                        {ingredients.length > 8 ? "…" : ""}
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button variant="secondary" onClick={() => nav(`/edit/${r.id}`)}>
-                    Edit
-                  </Button>
-                </div>
-              </div>
+              {/* sentinel for infinite scroll */}
+              <div ref={sentinelRef} className="h-8" />
+              {loadingMore ? <div className="py-3 text-sm text-slate-300">Loading more…</div> : null}
             </div>
-          ))}
-
-          {!loading && filtered.length === 0 ? (
-            <div className="py-10 text-center text-slate-400">
-              {rows.length === 0
-                ? "No recipes loaded yet (or the API returned none)."
-                : "No matches for your filters."}
-            </div>
-          ) : null}
-
-          <div ref={sentinelRef} />
-
-          {!loading && noMore && rows.length > 0 ? (
-            <div className="py-6 text-center text-slate-500">No more results.</div>
-          ) : null}
-        </div>
-      </Card>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
