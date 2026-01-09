@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { registerUser, loginUser } from "../lib/api.js";
-import { useAuth } from "../auth/AuthContext.jsx";
+import { useNavigate } from "react-router-dom";
 import { Button, Card, ErrorBanner, Input } from "../components/ui.jsx";
+import { useAuth } from "../auth/AuthContext.jsx";
 
 export default function Register() {
-  const nav = useNavigate();
-  const { setSession } = useAuth();
+  const { register, login } = useAuth();
+  const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
@@ -18,16 +19,19 @@ export default function Register() {
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
+
+    if (password !== password2) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setStatus("loading");
     try {
-      await registerUser(email.trim(), password);
-
+      await register(email, password);
       // auto-login after register
-      const data = await loginUser(email.trim(), password);
-      setSession(data.email, data.token);
-
+      await login(email, password);
       setStatus("done");
-      nav("/");
+      navigate("/");
     } catch (err) {
       setStatus("error");
       setError(err?.message || String(err));
@@ -35,29 +39,30 @@ export default function Register() {
   }
 
   return (
-    <div className="mx-auto max-w-lg">
-      <Card title="Create account">
-        <ErrorBanner error={error} />
+    <div className="space-y-6">
+      <Card title="Register">
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Email</label>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+          </div>
 
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-          <Input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            type="password"
-          />
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Password</label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Confirm password</label>
+            <Input type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="••••••••" />
+          </div>
+
           <Button disabled={loading} type="submit">
-            Create account
+            {loading ? "Creating..." : "Create account"}
           </Button>
-        </form>
 
-        <div className="mt-4 text-sm text-slate-300">
-          Already have an account?{" "}
-          <Link className="text-emerald-300 hover:underline" to="/login">
-            Sign in
-          </Link>
-        </div>
+          <ErrorBanner error={error} />
+        </form>
       </Card>
     </div>
   );
