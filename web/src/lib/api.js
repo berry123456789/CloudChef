@@ -1,27 +1,18 @@
-const API_BASE = import.meta.env.VITE_API_BASE;
+// web/src/lib/api.js
+import { getAuth } from "./auth.js";
 
-export function getApiBase() {
-  return API_BASE;
-}
+export const API_BASE = import.meta.env.VITE_API_BASE;
 
 export function apiOk() {
   return typeof API_BASE === "string" && API_BASE.startsWith("http");
 }
 
-export function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
+function authHeaders() {
+  const auth = getAuth();
+  return auth?.token ? { Authorization: `Bearer ${auth.token}` } : {};
 }
 
-export function prettyDate(iso) {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
-export async function fetchJson(url, options) {
+async function fetchJson(url, options) {
   const res = await fetch(url, options);
 
   const contentType = res.headers.get("content-type") || "";
@@ -49,56 +40,77 @@ export async function fetchJson(url, options) {
   return res.text();
 }
 
+// ---------- Auth ----------
+export async function registerUser(email, password) {
+  return fetchJson(`${API_BASE}/RegisterUser`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function loginUser(email, password) {
+  return fetchJson(`${API_BASE}/LoginUser`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+// ---------- Recipes ----------
 export async function listRecipes(continuationToken = "") {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
   const url = continuationToken
-    ? `${API_BASE}/ListRecipes?continuationToken=${encodeURIComponent(continuationToken)}`
+    ? `${API_BASE}/ListRecipes?continuationToken=${encodeURIComponent(
+        continuationToken
+      )}`
     : `${API_BASE}/ListRecipes`;
 
-  return fetchJson(url);
+  return fetchJson(url, {
+    headers: { ...authHeaders() },
+  });
 }
 
 export async function getRecipe(id) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
-  return fetchJson(`${API_BASE}/GetRecipe?id=${encodeURIComponent(id)}`);
+  return fetchJson(`${API_BASE}/GetRecipe?id=${encodeURIComponent(id)}`, {
+    headers: { ...authHeaders() },
+  });
 }
 
 export async function createRecipe({ title, instructions, ingredients }) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
   return fetchJson(`${API_BASE}/CreateRecipe`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ title, instructions, ingredients }),
   });
 }
 
-export async function updateRecipe(id, payload) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
+export async function updateRecipe(id, patch) {
   return fetchJson(`${API_BASE}/UpdateRecipe?id=${encodeURIComponent(id)}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
   });
 }
 
 export async function deleteRecipe(id) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
   return fetchJson(`${API_BASE}/DeleteRecipe?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
+    headers: { ...authHeaders() },
   });
 }
 
 export async function uploadRecipeImage(id, file) {
-  if (!API_BASE) throw new Error("VITE_API_BASE missing");
-  if (!file) throw new Error("Missing file");
-
-  const res = await fetch(`${API_BASE}/UploadRecipeImage?id=${encodeURIComponent(id)}`, {
-    method: "POST",
-    headers: {
-      "content-type": file.type || "application/octet-stream",
-    },
-    body: file,
-  });
+  const res = await fetch(
+    `${API_BASE}/UploadRecipeImage?id=${encodeURIComponent(id)}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+        ...authHeaders(),
+      },
+      body: file,
+    }
+  );
 
   const ct = res.headers.get("content-type") || "";
   const isJson = ct.toLowerCase().includes("application/json");
@@ -110,7 +122,6 @@ export async function uploadRecipeImage(id, file) {
     throw new Error(`Upload failed (HTTP ${res.status}) — ${msg}`);
   }
 
-  // some functions return json, some return text; accept either
-  return isJson ? res.json() : res.text();
+  if (isJson) return res.json();
+  return res.text();
 }
-
