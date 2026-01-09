@@ -1,31 +1,50 @@
-import { TableClient } from "@azure/data-tables";
-import bcrypt from "bcryptjs";
+const { app } = require("@azure/functions");
+const { TableClient } = require("@azure/data-tables");
+const bcrypt = require("bcryptjs");
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-const usersTable = TableClient.fromConnectionString(connectionString, "Users");
 
-export default async function (context, req) {
-  try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      context.res = { status: 400, body: "Email and password required" };
-      return;
+app.http("LoginUser", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "LoginUser",
+  handler: async (request, context) => {
+    try {
+      if (!connectionString) {
+        return { status: 500, body: "Missing AZURE_STORAGE_CONNECTION_STRING" };
+      }
+
+      const usersTable = TableClient.fromConnectionString(connectionString, "Users");
+
+      const body = await request.json().catch(() => ({}));
+      const { email, password } = body || {};
+
+      if (!email || !password) {
+        return { status: 400, body: "Email and password required" };
+      }
+
+      const emailLower = String(email).trim().toLowerCase();
+
+      let user;
+      try {
+        user = await usersTable.getEntity("USER", emailLower);
+      } catch {
+        return { status: 401, body: "Invalid email or password" };
+      }
+
+      const ok = await bcrypt.compare(password, user.passwordHash);
+      if (!ok) return { status: 401, body: "Invalid email or password" };
+
+      // Simple starter token (NOT secure long-term). We'll replace with JWT later.
+      const token = Buffer.from(`${emailLower}:${Date.now()}`).toString("base64");
+
+      return {
+        status: 200,
+        jsonBody: { email: emailLower, token },
+      };
+    } catch (err) {
+      context.error(err);
+      return { status: 500, body: err?.message || String(err) };
     }
-
-    const emailLower = email.toLowerCase();
-    const user = await usersTable.getEntity("USER", emailLower);
-
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) {
-      context.res = { status: 401, body: "Invalid credentials" };
-      return;
-    }
-
-    context.res = {
-      status: 200,
-      body: { email: emailLower }
-    };
-  } catch {
-    context.res = { status: 401, body: "Invalid credentials" };
-  }
-}
+  },
+});
