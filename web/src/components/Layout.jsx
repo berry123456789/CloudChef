@@ -21,10 +21,9 @@ export default function Layout() {
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight">CloudChef</h1>
             <div className="mt-1 text-slate-300">
-              Manage recipes • Upload images • CRUD demo
+              Manage recipes • Upload images
             </div>
 
-            {/* ✅ removed API line + session text */}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
