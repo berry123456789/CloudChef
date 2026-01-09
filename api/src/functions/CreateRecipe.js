@@ -27,6 +27,15 @@ function parseIngredients(input) {
     .filter(Boolean);
 }
 
+// ✅ Keep meal type in a consistent “UI-friendly” form (Title Case strings like "Dinner")
+function cleanMealType(x) {
+  const v = cleanString(x);
+  if (!v) return "";
+  // allow "Any meal" to mean empty
+  if (v.toLowerCase() === "any meal") return "";
+  return v; // keep as provided: "Breakfast", "Lunch", etc.
+}
+
 app.http("CreateRecipe", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -68,22 +77,22 @@ app.http("CreateRecipe", {
 
       // ---- Ingredients: accept array OR string
       const cleanedIngredients = parseIngredients(body.ingredients);
-      if (!cleanedIngredients.length) {
-        // allow empty if you want; otherwise keep this as validation
-        // return { status: 400, jsonBody: { error: "ingredients must not be empty" } };
-      }
+      // if you want to enforce:
+      // if (!cleanedIngredients.length) return { status: 400, jsonBody: { error: "ingredients must not be empty" } };
 
       // ---- Schema compatibility
-      // NEW: mealTypes: []  (store first one as mealType string for Table)
-      // OLD: mealType: "Dinner"
-      const mealTypes = cleanArrayLower(body.mealTypes);
+
+      // NEW: mealTypes: []  (store first one as mealType string)
+      // OLD/UI: mealType: "Dinner"
+      const mealTypesRaw = Array.isArray(body.mealTypes) ? body.mealTypes : [];
       const mealType =
-        mealTypes.length > 0
-          ? mealTypes[0]
-          : cleanLower(body.mealType);
+        mealTypesRaw.length > 0
+          ? cleanMealType(mealTypesRaw[0])
+          : cleanMealType(body.mealType);
 
       // NEW: dietaryTags: []
-      // OLD: dietary: []
+      // OLD/UI: dietary: []
+      // ✅ dietary tags stored lowercase consistently
       const dietaryTags =
         cleanArrayLower(body.dietaryTags).length > 0
           ? cleanArrayLower(body.dietaryTags)
@@ -119,8 +128,6 @@ app.http("CreateRecipe", {
       };
 
       const table = getRecipesTableClient();
-
-      // If the table client is misconfigured, this is where it usually blows up
       await table.createEntity(entity);
 
       return {
