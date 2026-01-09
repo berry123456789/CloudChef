@@ -1,79 +1,88 @@
+// web/src/auth/AuthContext.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { loginUser as apiLoginUser, registerUser as apiRegisterUser } from "../lib/api.js";
-
-const STORAGE_KEY = "cloudchef_auth";
+import { loginUser, registerUser } from "../lib/api.js";
 
 const AuthContext = createContext(null);
 
+const TOKEN_KEY = "cloudchef_token";
+const EMAIL_KEY = "cloudchef_email";
+
+function readLS(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLS(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function removeLS(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
-  const [ready, setReady] = useState(false);
+  const [email, setEmail] = useState(() => readLS(EMAIL_KEY) || "");
+  const [token, setToken] = useState(() => readLS(TOKEN_KEY) || "");
 
-  // Restore session on first load
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.email && parsed?.token) {
-          setEmail(String(parsed.email));
-          setToken(String(parsed.token));
-        }
-      }
-    } catch {
-      // ignore corrupted storage
-    } finally {
-      setReady(true);
-    }
-  }, []);
+    if (email) writeLS(EMAIL_KEY, email);
+    else removeLS(EMAIL_KEY);
 
-  // Persist session whenever it changes
-  useEffect(() => {
-    if (!ready) return;
-    if (email && token) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ email, token }));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [email, token, ready]);
+    if (token) writeLS(TOKEN_KEY, token);
+    else removeLS(TOKEN_KEY);
+  }, [email, token]);
 
   async function login(emailInput, password) {
-    const res = await apiLoginUser(emailInput, password);
-    setEmail(res.email);
-    setToken(res.token);
+    const res = await loginUser(emailInput, password);
+    // res should be: { email, token }
+    setEmail(res.email || "");
+    setToken(res.token || "");
     return res;
   }
 
   async function register(emailInput, password) {
-    const res = await apiRegisterUser(emailInput, password);
+    const res = await registerUser(emailInput, password);
+    // register might return just email; don’t auto-login unless you want to
     return res;
   }
 
   function logout() {
     setEmail("");
     setToken("");
-    localStorage.removeItem(STORAGE_KEY);
+    // also clear old possible keys if you had them
+    removeLS("token");
+    removeLS("authToken");
+    removeLS("cloudchef_auth");
   }
 
   const value = useMemo(
     () => ({
-      ready,
-      isAuthed: Boolean(email && token),
       email,
       token,
+      isAuthed: Boolean(token),
       login,
       register,
       logout,
     }),
-    [ready, email, token]
+    [email, token]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const v = useContext(AuthContext);
-  if (!v) throw new Error("useAuth must be used inside <AuthProvider>");
-  return v;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
+  return ctx;
 }
