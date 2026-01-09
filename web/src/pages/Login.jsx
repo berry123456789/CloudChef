@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { loginUser } from "../lib/api.js";
-import { useAuth } from "../auth/AuthContext.jsx";
+import { useNavigate } from "react-router-dom";
 import { Button, Card, ErrorBanner, Input } from "../components/ui.jsx";
+import { useAuth } from "../auth/AuthContext.jsx";
 
 export default function Login() {
-  const nav = useNavigate();
-  const { setSession } = useAuth();
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
@@ -20,11 +20,9 @@ export default function Login() {
     setError("");
     setStatus("loading");
     try {
-      const data = await loginUser(email.trim(), password);
-      // expects { email, token }
-      setSession(data.email, data.token);
+      await login(email, password);
       setStatus("done");
-      nav("/");
+      navigate("/"); // go back to recipes
     } catch (err) {
       setStatus("error");
       setError(err?.message || String(err));
@@ -32,29 +30,25 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto max-w-lg">
-      <Card title="Sign in">
-        <ErrorBanner error={error} />
+    <div className="space-y-6">
+      <Card title="Login">
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Email</label>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+          </div>
 
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-          <Input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            type="password"
-          />
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Password</label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          </div>
+
           <Button disabled={loading} type="submit">
-            Sign in
+            {loading ? "Signing in..." : "Sign in"}
           </Button>
-        </form>
 
-        <div className="mt-4 text-sm text-slate-300">
-          No account?{" "}
-          <Link className="text-emerald-300 hover:underline" to="/register">
-            Create one
-          </Link>
-        </div>
+          <ErrorBanner error={error} />
+        </form>
       </Card>
     </div>
   );
