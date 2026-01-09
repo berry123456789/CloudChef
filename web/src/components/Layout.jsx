@@ -1,16 +1,16 @@
-// web/src/components/Layout.jsx
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext.jsx";
 import { API_BASE } from "../lib/api.js";
-import { clearAuth, getAuth, isLoggedIn } from "../lib/auth.js";
 
 function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-function NavBtn({ to, children }) {
+function NavBtn({ to, children, end = false }) {
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) =>
         classNames(
           "rounded-xl px-4 py-2 text-sm font-semibold transition",
@@ -19,7 +19,6 @@ function NavBtn({ to, children }) {
             : "bg-white/10 text-slate-100 hover:bg-white/15"
         )
       }
-      end
     >
       {children}
     </NavLink>
@@ -27,13 +26,12 @@ function NavBtn({ to, children }) {
 }
 
 export default function Layout() {
-  const navigate = useNavigate();
-  const loggedIn = isLoggedIn();
-  const auth = getAuth();
+  const nav = useNavigate();
+  const { isAuthed, email, logout } = useAuth();
 
-  function logout() {
-    clearAuth();
-    navigate("/login");
+  function onLogout() {
+    logout();
+    nav("/login");
   }
 
   return (
@@ -48,10 +46,10 @@ export default function Layout() {
                 <span className="break-all font-mono text-slate-200">{API_BASE}</span>
               </div>
               <div className="mt-2 text-sm text-slate-300">
-                {loggedIn ? (
+                {isAuthed ? (
                   <span>
                     Signed in as{" "}
-                    <span className="font-mono text-slate-200">{auth?.email}</span>
+                    <span className="font-mono text-slate-200">{email}</span>
                   </span>
                 ) : (
                   <span>Not signed in</span>
@@ -60,13 +58,19 @@ export default function Layout() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <NavBtn to="/">Recipes</NavBtn>
+              <NavBtn to="/" end>Recipes</NavBtn>
+
+              {/* Create/edit should require auth */}
               <NavBtn to="/create">Create</NavBtn>
-              {!loggedIn ? (
-                <NavBtn to="/login">Login</NavBtn>
+
+              {!isAuthed ? (
+                <>
+                  <NavBtn to="/login">Login</NavBtn>
+                  <NavBtn to="/register">Register</NavBtn>
+                </>
               ) : (
                 <button
-                  onClick={logout}
+                  onClick={onLogout}
                   className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20"
                 >
                   Logout
