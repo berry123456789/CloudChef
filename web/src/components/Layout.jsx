@@ -1,54 +1,85 @@
-import { NavLink, Outlet } from "react-router-dom";
+// web/src/components/Layout.jsx
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { API_BASE } from "../lib/api.js";
+import { clearAuth, getAuth, isLoggedIn } from "../lib/auth.js";
 
-function cx(...xs) {
+function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+function NavBtn({ to, children }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        classNames(
+          "rounded-xl px-4 py-2 text-sm font-semibold transition",
+          isActive
+            ? "bg-emerald-500 text-slate-950"
+            : "bg-white/10 text-slate-100 hover:bg-white/15"
+        )
+      }
+      end
+    >
+      {children}
+    </NavLink>
+  );
+}
+
 export default function Layout() {
-  const linkBase =
-    "rounded-xl px-3 py-2 text-sm font-semibold transition";
-  const linkActive =
-    "bg-emerald-500 text-slate-950";
-  const linkIdle =
-    "bg-white/10 text-slate-100 hover:bg-white/15";
+  const navigate = useNavigate();
+  const loggedIn = isLoggedIn();
+  const auth = getAuth();
+
+  function logout() {
+    clearAuth();
+    navigate("/login");
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-white/10 bg-slate-950/70 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-4xl font-bold tracking-tight">CloudChef</div>
-            <div className="mt-1 text-sm text-slate-300">
-              Manage recipes • Upload images • CRUD demo
+      <div className="border-b border-white/10 bg-slate-950/70 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight">CloudChef</h1>
+              <div className="mt-1 text-sm text-slate-300">
+                API:{" "}
+                <span className="break-all font-mono text-slate-200">{API_BASE}</span>
+              </div>
+              <div className="mt-2 text-sm text-slate-300">
+                {loggedIn ? (
+                  <span>
+                    Signed in as{" "}
+                    <span className="font-mono text-slate-200">{auth?.email}</span>
+                  </span>
+                ) : (
+                  <span>Not signed in</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <NavBtn to="/">Recipes</NavBtn>
+              <NavBtn to="/create">Create</NavBtn>
+              {!loggedIn ? (
+                <NavBtn to="/login">Login</NavBtn>
+              ) : (
+                <button
+                  onClick={logout}
+                  className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20"
+                >
+                  Logout
+                </button>
+              )}
             </div>
           </div>
-
-          <nav className="flex flex-wrap gap-2">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                cx(linkBase, isActive ? linkActive : linkIdle)
-              }
-            >
-              Recipes
-            </NavLink>
-
-            <NavLink
-              to="/create"
-              className={({ isActive }) =>
-                cx(linkBase, isActive ? linkActive : linkIdle)
-              }
-            >
-              Create
-            </NavLink>
-          </nav>
         </div>
-      </header>
+      </div>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mx-auto max-w-6xl px-4 py-6">
         <Outlet />
-      </main>
+      </div>
     </div>
   );
 }
