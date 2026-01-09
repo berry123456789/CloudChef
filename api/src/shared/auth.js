@@ -1,12 +1,17 @@
-// api/shared/auth.js
-function getUserEmailFromRequest(request) {
+// api/src/shared/auth.js
+
+function getBearerToken(request) {
   const auth = request.headers.get("authorization") || request.headers.get("Authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  if (!m) return null;
+  return m ? m[1].trim() : null;
+}
 
-  const token = m[1].trim();
+// Your LoginUser creates token = base64("email:timestamp")
+function getUserEmailFromRequest(request) {
+  const token = getBearerToken(request);
+  if (!token) return null;
+
   try {
-    // token is base64("email:timestamp")
     const decoded = Buffer.from(token, "base64").toString("utf8");
     const email = (decoded.split(":")[0] || "").trim().toLowerCase();
     if (!email || !email.includes("@")) return null;
@@ -16,7 +21,7 @@ function getUserEmailFromRequest(request) {
   }
 }
 
-function requireUser(request) {
+function requireUserEmail(request) {
   const email = getUserEmailFromRequest(request);
   if (!email) {
     const err = new Error("Missing Authorization: Bearer <token>");
@@ -26,4 +31,4 @@ function requireUser(request) {
   return email;
 }
 
-module.exports = { getUserEmailFromRequest, requireUser };
+module.exports = { getBearerToken, getUserEmailFromRequest, requireUserEmail };
