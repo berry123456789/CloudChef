@@ -1,16 +1,14 @@
+// api/src/functions/DeleteRecipe.js
 const { app } = require("@azure/functions");
 const { getRecipesTableClient, getBlobContainerClient } = require("../shared/storage");
-const { requireUser } = require("../shared/auth");
+const { requireUserEmail } = require("../shared/auth");
 
 app.http("DeleteRecipe", {
   methods: ["DELETE", "POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      // Require login
-      const auth = requireUser(request);
-      if (!auth.ok) return { status: auth.status, jsonBody: { error: auth.error } };
-      const email = auth.email;
+      const userEmail = requireUserEmail(request);
 
       const url = new URL(request.url);
       const id = (url.searchParams.get("id") || "").trim();
@@ -25,30 +23,31 @@ app.http("DeleteRecipe", {
         return { status: 404, jsonBody: { error: "Recipe not found" } };
       }
 
-      // Ownership check
-      const owner = (entity.createdBy || "").toLowerCase();
-      if (!owner) {
-        return { status: 403, jsonBody: { error: "Recipe has no owner set (legacy data)" } };
-      }
-      if (owner !== email.toLowerCase()) {
-        return { status: 403, jsonBody: { error: "You can only delete your own recipes" } };
+      const owner = (entity.ownerEmail || "").trim().toLowerCase();
+
+      // Owned by someone else => block
+      if (owner && owner !== userEmail) {
+        return { status: 403, jsonBody: { error: "Not allowed to delete this recipe" } };
       }
 
-      // Delete blob if stored
+      // Legacy (no owner) => allow delete
       const blobName = entity.imageBlobName || "";
       if (blobName) {
         try {
           const container = getBlobContainerClient();
-          const blobClient = container.getBlobClient(blobName);
-          await blobClient.deleteIfExists();
+          await container.getBlobClient(blobName).deleteIfExists();
         } catch (blobErr) {
           context.warn(`Blob delete failed for ${blobName}: ${blobErr?.message || blobErr}`);
         }
       }
 
       await table.deleteEntity("recipe", id);
+
       return { status: 204 };
     } catch (err) {
+      const status = err?.status || 500;
+      if (status !== 500) return { status, jsonBody: { error: err.message } };
+
       context.error(err);
       return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
     }
