@@ -1,87 +1,117 @@
 // web/src/pages/Recipes.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { listRecipes } from "../lib/api.js";
-import { Button, Card, Input, StatusPill, ErrorBanner } from "../components/ui.jsx";
+import { useNavigate } from "react-router-dom";
+import { listRecipes, apiOk } from "../lib/api.js";
+import { Card, Input, Button, StatusPill, ErrorBanner } from "../components/ui.jsx";
+
+const MEAL_OPTIONS = [
+  { value: "any", label: "Any meal" },
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
+];
 
 const DIETARY_OPTIONS = [
   { key: "vegan", label: "Vegan" },
   { key: "vegetarian", label: "Vegetarian" },
-  { key: "glutenfree", label: "Gluten-free" },
-  { key: "dairyfree", label: "Dairy-free" },
+  { key: "glutenFree", label: "Gluten-free" },
+  { key: "dairyFree", label: "Dairy-free" },
 ];
 
-const MEAL_TYPES = [
-  { key: "", label: "Any meal" },
-  { key: "breakfast", label: "Breakfast" },
-  { key: "lunch", label: "Lunch" },
-  { key: "dinner", label: "Dinner" },
-  { key: "snack", label: "Snack" },
-];
+function normalizeListResponse(data) {
+  // Accept many possible response shapes
+  const items =
+    data?.recipes ||
+    data?.items ||
+    data?.value ||
+    data?.entities ||
+    data?.results ||
+    [];
+  const continuationToken =
+    data?.continuationToken ||
+    data?.nextContinuationToken ||
+    data?.continuation ||
+    data?.next ||
+    "";
+  return { items: Array.isArray(items) ? items : [], continuationToken: continuationToken || "" };
+}
+
+function splitWords(q) {
+  return String(q || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
 
 export default function Recipes() {
   const nav = useNavigate();
 
-  const [items, setItems] = useState([]);
-  const [token, setToken] = useState("");
+  // server paging
+  const [rows, setRows] = useState([]);
+  const [continuationToken, setContinuationToken] = useState("");
   const [loading, setLoading] = useState(false);
+  const [noMore, setNoMore] = useState(false);
   const [error, setError] = useState("");
 
-  // search + filters
-  const [q, setQ] = useState("");
-  const [mealType, setMealType] = useState("");
-  const [dietary, setDietary] = useState([]);
-
-  // debounce typing
-  const [qDebounced, setQDebounced] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setQDebounced(q.trim()), 300);
-    return () => clearTimeout(t);
-  }, [q]);
-
-  const query = useMemo(
-    () => ({ q: qDebounced, mealType, dietary }),
-    [qDebounced, mealType, dietary]
-  );
+  // filters
+  const [query, setQuery] = useState("");
+  const [meal, setMeal] = useState("any");
+  const [dietary, setDietary] = useState({
+    vegan: false,
+    vegetarian: false,
+    glutenFree: false,
+    dairyFree: false,
+  });
 
   const sentinelRef = useRef(null);
+  const inflightRef = useRef(false);
 
-  async function loadFirstPage() {
+  async function loadPage({ reset = false } = {}) {
+    if (!apiOk()) {
+      setError("VITE_API_BASE missing/invalid. Check your web app settings.");
+      return;
+    }
+    if (inflightRef.current) return;
+    if (!reset && noMore) return;
+
+    inflightRef.current = true;
     setLoading(true);
     setError("");
+
     try {
-      const data = await listRecipes({ ...query, continuationToken: "" });
-      setItems(data.recipes || []);
-      setToken(data.continuationToken || "");
+      const tokenToUse = reset ? "" : continuationToken;
+      const data = await listRecipes(tokenToUse);
+      const { items, continuationToken: next } = normalizeListResponse(data);
+
+      setRows((prev) => (reset ? items : [...prev, ...items]));
+      setContinuationToken(next);
+
+      // If API returns no next token OR returned 0 items, assume no more pages
+      if (!next || items.length === 0) setNoMore(true);
+      else setNoMore(false);
     } catch (e) {
-      setError(e.message || String(e));
-      setItems([]);
-      setToken("");
+      setError(String(e?.message || e));
     } finally {
       setLoading(false);
+      inflightRef.current = false;
     }
   }
 
-  async function loadMore() {
-    if (!token || loading) return;
-    setLoading(true);
-    setError("");
-    try {
-      const data = await listRecipes({ ...query, continuationToken: token });
-      setItems((prev) => [...prev, ...(data.recipes || [])]);
-      setToken(data.continuationToken || "");
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setLoading(false);
-    }
+  function onRefresh() {
+    setNoMore(false);
+    setContinuationToken("");
+    setRows([]);
+    loadPage({ reset: true });
   }
 
-  // reload when query changes
+  // initial load
   useEffect(() => {
-    loadFirstPage();
+    onRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.q, query.mealType, JSON.stringify(query.dietary)]);
+  }, []);
 
   // infinite scroll observer
   useEffect(() => {
@@ -91,168 +121,189 @@ export default function Recipes() {
     const obs = new IntersectionObserver(
       (entries) => {
         const first = entries[0];
-        if (first.isIntersecting) loadMore();
+        if (!first?.isIntersecting) return;
+        // Load next page when user scrolls near bottom
+        loadPage({ reset: false });
       },
-      { root: null, rootMargin: "300px", threshold: 0 }
+      { root: null, rootMargin: "600px 0px", threshold: 0 }
     );
 
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, loading, query.q, query.mealType, JSON.stringify(query.dietary)]);
+  }, [continuationToken, noMore]);
+
+  // client-side filtering
+  const filtered = useMemo(() => {
+    const words = splitWords(query);
+    const dietaryOn = Object.entries(dietary).filter(([, v]) => v).map(([k]) => k);
+
+    return rows.filter((r) => {
+      const title = String(r.title || "").toLowerCase();
+      const ingredients = Array.isArray(r.ingredients)
+        ? r.ingredients.map((x) => String(x).toLowerCase())
+        : [];
+      const haystack = [title, ...ingredients].join(" ");
+
+      // words must all match
+      for (const w of words) {
+        if (!haystack.includes(w)) return false;
+      }
+
+      // meal type filter (only if recipe has it)
+      if (meal !== "any") {
+        const recipeMeal = String(r.mealType || r.meal || "").toLowerCase();
+        if (recipeMeal && recipeMeal !== meal) return false;
+      }
+
+      // dietary filters (only if recipe has tags)
+      if (dietaryOn.length > 0) {
+        const tags = r.dietary || r.tags || {};
+        // allow tags as object { vegan: true } or array ["vegan"]
+        const has = (k) => {
+          if (Array.isArray(tags)) return tags.includes(k);
+          return Boolean(tags?.[k]);
+        };
+
+        // require ALL selected to be present (change to "some" if you prefer)
+        for (const k of dietaryOn) {
+          if ((r.dietary || r.tags) && !has(k)) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [rows, query, meal, dietary]);
 
   function toggleDietary(key) {
-    setDietary((prev) =>
-      prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
-    );
+    setDietary((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-50">Recipes</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-3xl font-bold text-slate-100">Recipes</h1>
+          <p className="mt-1 text-slate-300">
             Search by title or ingredients. Filter by meal + dietary.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={loadFirstPage}>
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" onClick={onRefresh} disabled={loading}>
             Refresh
           </Button>
           <Button onClick={() => nav("/create")}>Create</Button>
         </div>
       </div>
 
-      <Card title="Search & Filters" right={<StatusPill loading={loading} />}>
+      <ErrorBanner error={error} />
+
+      <Card title="Search & Filters">
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm text-slate-300">Search (words)</label>
+            <div className="mb-2 text-sm text-slate-200">Search (words)</div>
             <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="e.g. chicken pasta garlic"
             />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm text-slate-300">Meal type</label>
+              <div className="mb-2 text-sm text-slate-200">Meal type</div>
               <select
-                value={mealType}
-                onChange={(e) => setMealType(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100"
+                value={meal}
+                onChange={(e) => setMeal(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
               >
-                {MEAL_TYPES.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.label}
+                {MEAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} className="bg-slate-950">
+                    {o.label}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm text-slate-300">Dietary</label>
+              <div className="mb-2 text-sm text-slate-200">Dietary</div>
               <div className="flex flex-wrap gap-2">
                 {DIETARY_OPTIONS.map((d) => {
-                  const active = dietary.includes(d.key);
+                  const active = dietary[d.key];
                   return (
                     <button
                       key={d.key}
                       type="button"
                       onClick={() => toggleDietary(d.key)}
-                      className={
-                        "rounded-full border px-3 py-1 text-sm transition " +
-                        (active
-                          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
-                          : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.07]")
-                      }
+                      className={[
+                        "rounded-full border px-3 py-1 text-sm transition",
+                        active
+                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200"
+                          : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.07]",
+                      ].join(" ")}
                     >
                       {d.label}
                     </button>
                   );
                 })}
               </div>
+              <div className="mt-2 text-xs text-slate-400">
+                (Dietary filters only work on recipes that actually have dietary tags saved.)
+              </div>
             </div>
           </div>
-
-          <ErrorBanner error={error} />
         </div>
       </Card>
 
-      <Card title={`Results (${items.length})`}>
+      <Card
+        title={`Results (${filtered.length})`}
+        right={<StatusPill loading={loading} />}
+      >
         <div className="space-y-3">
-          {items.map((r) => (
+          {filtered.map((r) => (
             <div
               key={r.id}
-              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4"
+              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.03]"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-[240px]">
-                  <Link
-                    to={`/recipes/${r.id}`}
-                    className="text-lg font-semibold text-slate-100 hover:underline"
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div
+                    className="cursor-pointer text-lg font-semibold text-slate-100 hover:underline"
+                    onClick={() => nav(`/recipes/${r.id}`)}
+                    title={r.title}
                   >
-                    {r.title}
-                  </Link>
-
-                  <div className="mt-1 text-xs text-slate-400 break-all">ID: {r.id}</div>
-
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    {r.mealType ? (
-                      <span className="rounded-full bg-white/10 px-2 py-1 text-slate-200">
-                        {r.mealType}
-                      </span>
-                    ) : null}
-
-                    {r.dietary
-                      ? String(r.dietary)
-                          .split(",")
-                          .map((x) => x.trim())
-                          .filter(Boolean)
-                          .map((t) => (
-                            <span
-                              key={t}
-                              className="rounded-full bg-white/10 px-2 py-1 text-slate-200"
-                            >
-                              {t}
-                            </span>
-                          ))
-                      : null}
+                    {r.title || "(untitled)"}
                   </div>
+
+                  <div className="mt-1 text-sm text-slate-300 line-clamp-2">
+                    {r.instructions || ""}
+                  </div>
+
+                  <div className="mt-2 text-xs text-slate-500">ID: {r.id}</div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <Button variant="secondary" onClick={() => nav(`/edit/${r.id}`)}>
                     Edit
                   </Button>
-                  <Button onClick={() => nav(`/recipes/${r.id}`)}>Open</Button>
                 </div>
               </div>
-
-              {r.instructions ? (
-                <p className="mt-3 line-clamp-2 text-sm text-slate-300">{r.instructions}</p>
-              ) : null}
-
-              {Array.isArray(r.ingredients) && r.ingredients.length ? (
-                <p className="mt-2 text-sm text-slate-400">
-                  <span className="text-slate-300">Ingredients:</span>{" "}
-                  {r.ingredients.slice(0, 10).join(", ")}
-                  {r.ingredients.length > 10 ? "…" : ""}
-                </p>
-              ) : null}
             </div>
           ))}
 
-          <div ref={sentinelRef} />
-
-          {!token && !loading ? (
-            <div className="pt-2 text-center text-sm text-slate-500">No more results.</div>
+          {!loading && filtered.length === 0 ? (
+            <div className="py-10 text-center text-slate-400">
+              {rows.length === 0
+                ? "No recipes loaded yet (or the API returned none)."
+                : "No matches for your filters."}
+            </div>
           ) : null}
 
-          {loading ? (
-            <div className="pt-2 text-center text-sm text-slate-500">Loading…</div>
+          <div ref={sentinelRef} />
+
+          {!loading && noMore && rows.length > 0 ? (
+            <div className="py-6 text-center text-slate-500">No more results.</div>
           ) : null}
         </div>
       </Card>
