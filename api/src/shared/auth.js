@@ -1,12 +1,10 @@
-// api/src/shared/auth.js
-
 function getBearerToken(request) {
   const auth = request.headers.get("authorization") || request.headers.get("Authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   return m ? m[1].trim() : null;
 }
 
-// Your LoginUser creates token = base64("email:timestamp")
+// LoginUser creates token = base64("email:timestamp")
 function getUserEmailFromRequest(request) {
   const token = getBearerToken(request);
   if (!token) return null;
@@ -21,14 +19,24 @@ function getUserEmailFromRequest(request) {
   }
 }
 
-function requireUserEmail(request) {
+// ✅ New unified helper used by all functions
+function requireUser(request) {
   const email = getUserEmailFromRequest(request);
   if (!email) {
-    const err = new Error("Missing Authorization: Bearer <token>");
-    err.status = 401;
-    throw err;
+    return { ok: false, status: 401, error: "Unauthorized" };
   }
-  return email;
+  return { ok: true, email };
 }
 
-module.exports = { getBearerToken, getUserEmailFromRequest, requireUserEmail };
+// Keep old API for any legacy callers
+function requireUserEmail(request) {
+  const u = requireUser(request);
+  if (!u.ok) {
+    const err = new Error("Missing Authorization: Bearer <token>");
+    err.status = u.status;
+    throw err;
+  }
+  return u.email;
+}
+
+module.exports = { getBearerToken, getUserEmailFromRequest, requireUser, requireUserEmail };
