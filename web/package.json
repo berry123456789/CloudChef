@@ -3,11 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-{
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "serve -s dist -l $PORT",
+    "start": "serve -s dist -l 8080",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -15,10 +14,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^6.26.2",
-    "serve": "^14.2.4"
-  }
-}
-
+    "serve": "^14.2.5"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
@@ -33,4 +30,4 @@
     "tailwindcss": "^3.4.19",
     "vite": "^7.2.4"
   }
-} 
+}
