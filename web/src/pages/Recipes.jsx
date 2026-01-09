@@ -1,3 +1,4 @@
+// web/src/pages/Recipes.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { listRecipes } from "../lib/api.js";
@@ -43,7 +44,6 @@ export default function Recipes() {
     [qDebounced, mealType, dietary]
   );
 
-  // infinite scroll sentinel
   const sentinelRef = useRef(null);
 
   async function loadFirstPage() {
@@ -83,7 +83,7 @@ export default function Recipes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.q, query.mealType, JSON.stringify(query.dietary)]);
 
-  // observe scroll sentinel
+  // infinite scroll observer
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -125,16 +125,10 @@ export default function Recipes() {
         </div>
       </div>
 
-      {/* Search + Filters */}
-      <Card
-        title="Search & Filters"
-        right={<StatusPill loading={loading} />}
-      >
+      <Card title="Search & Filters" right={<StatusPill loading={loading} />}>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm text-slate-300">
-              Search (words)
-            </label>
+            <label className="mb-1 block text-sm text-slate-300">Search (words)</label>
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -144,9 +138,7 @@ export default function Recipes() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm text-slate-300">
-                Meal type
-              </label>
+              <label className="mb-1 block text-sm text-slate-300">Meal type</label>
               <select
                 value={mealType}
                 onChange={(e) => setMealType(e.target.value)}
@@ -161,9 +153,7 @@ export default function Recipes() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm text-slate-300">
-                Dietary
-              </label>
+              <label className="mb-2 block text-sm text-slate-300">Dietary</label>
               <div className="flex flex-wrap gap-2">
                 {DIETARY_OPTIONS.map((d) => {
                   const active = dietary.includes(d.key);
@@ -191,7 +181,6 @@ export default function Recipes() {
         </div>
       </Card>
 
-      {/* Vertical list */}
       <Card title={`Results (${items.length})`}>
         <div className="space-y-3">
           {items.map((r) => (
@@ -207,9 +196,8 @@ export default function Recipes() {
                   >
                     {r.title}
                   </Link>
-                  <div className="mt-1 text-xs text-slate-400 break-all">
-                    ID: {r.id}
-                  </div>
+
+                  <div className="mt-1 text-xs text-slate-400 break-all">ID: {r.id}</div>
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs">
                     {r.mealType ? (
@@ -217,6 +205,7 @@ export default function Recipes() {
                         {r.mealType}
                       </span>
                     ) : null}
+
                     {r.dietary
                       ? String(r.dietary)
                           .split(",")
@@ -235,47 +224,35 @@ export default function Recipes() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => nav(`/edit/${r.id}`)}
-                  >
+                  <Button variant="secondary" onClick={() => nav(`/edit/${r.id}`)}>
                     Edit
                   </Button>
-                  <Button onClick={() => nav(`/recipes/${r.id}`)}>
-                    Open
-                  </Button>
+                  <Button onClick={() => nav(`/recipes/${r.id}`)}>Open</Button>
                 </div>
               </div>
 
               {r.instructions ? (
-                <p className="mt-3 line-clamp-2 text-sm text-slate-300">
-                  {r.instructions}
-                </p>
+                <p className="mt-3 line-clamp-2 text-sm text-slate-300">{r.instructions}</p>
               ) : null}
 
               {Array.isArray(r.ingredients) && r.ingredients.length ? (
                 <p className="mt-2 text-sm text-slate-400">
                   <span className="text-slate-300">Ingredients:</span>{" "}
-                  {r.ingredients.slice(0, 8).join(", ")}
-                  {r.ingredients.length > 8 ? "…" : ""}
+                  {r.ingredients.slice(0, 10).join(", ")}
+                  {r.ingredients.length > 10 ? "…" : ""}
                 </p>
               ) : null}
             </div>
           ))}
 
-          {/* Sentinel for infinite scroll */}
           <div ref={sentinelRef} />
 
           {!token && !loading ? (
-            <div className="pt-2 text-center text-sm text-slate-500">
-              No more results.
-            </div>
+            <div className="pt-2 text-center text-sm text-slate-500">No more results.</div>
           ) : null}
 
           {loading ? (
-            <div className="pt-2 text-center text-sm text-slate-500">
-              Loading…
-            </div>
+            <div className="pt-2 text-center text-sm text-slate-500">Loading…</div>
           ) : null}
         </div>
       </Card>
