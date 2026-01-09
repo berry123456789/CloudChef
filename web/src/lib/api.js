@@ -9,14 +9,35 @@ export function apiOk() {
 
 /**
  * Read token from localStorage.
- * We support a few keys because earlier versions may have used different names.
+ * Supports multiple keys + session-style JSON objects.
  */
 function getAuthToken() {
   try {
-    return (
+    // Simple keys (string tokens)
+    const direct =
       localStorage.getItem("cloudchef_token") ||
       localStorage.getItem("authToken") ||
-      localStorage.getItem("token") ||
+      localStorage.getItem("token");
+
+    if (direct) return direct;
+
+    // JSON session object patterns
+    const sessionRaw =
+      localStorage.getItem("cloudchef_session") ||
+      localStorage.getItem("session") ||
+      localStorage.getItem("auth") ||
+      localStorage.getItem("cloudchef_auth");
+
+    if (!sessionRaw) return "";
+
+    const session = JSON.parse(sessionRaw);
+
+    return (
+      session?.token ||
+      session?.accessToken ||
+      session?.jwt ||
+      session?.idToken ||
+      session?.authToken ||
       ""
     );
   } catch {
@@ -103,13 +124,12 @@ export function updateRecipe(id, payload) {
 }
 
 export async function deleteRecipe(id) {
-  // some function apps expose DeleteRecipe with DELETE, keep it clean
+  if (!API_BASE) throw new Error("VITE_API_BASE missing");
+  const token = getAuthToken();
+
   const res = await fetch(`${API_BASE}/DeleteRecipe?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: (() => {
-      const token = getAuthToken();
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    })(),
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   if (res.status === 204) return;
@@ -119,8 +139,8 @@ export async function deleteRecipe(id) {
 }
 
 /**
- * ✅ Image upload (FormData) — keeps export name consistent with Edit.jsx
- * Function URL assumed: /UploadRecipeImage?id=...
+ * Image upload (FormData)
+ * Function URL: /UploadRecipeImage?id=...
  */
 export async function uploadRecipeImage(id, file) {
   if (!API_BASE) throw new Error("VITE_API_BASE missing");
