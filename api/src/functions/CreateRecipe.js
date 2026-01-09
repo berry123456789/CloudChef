@@ -3,6 +3,11 @@ const crypto = require("crypto");
 const { getRecipesTableClient } = require("../shared/storage");
 const { requireUser } = require("../shared/auth");
 
+function isLogicAppCall(request) {
+  const secret = request.headers.get("x-la-secret");
+  return secret && process.env.LA_SHARED_SECRET && secret === process.env.LA_SHARED_SECRET;
+}
+
 function cleanString(x) {
   return String(x ?? "").trim();
 }
@@ -17,7 +22,6 @@ function cleanArrayLower(input) {
 }
 
 function parseIngredients(input) {
-  // Accept array OR comma-separated string
   if (Array.isArray(input)) {
     return input.map((x) => cleanString(x)).filter(Boolean);
   }
@@ -27,13 +31,11 @@ function parseIngredients(input) {
     .filter(Boolean);
 }
 
-// ✅ Keep meal type in a consistent “UI-friendly” form (Title Case strings like "Dinner")
 function cleanMealType(x) {
   const v = cleanString(x);
   if (!v) return "";
-  // allow "Any meal" to mean empty
   if (v.toLowerCase() === "any meal") return "";
-  return v; // keep as provided: "Breakfast", "Lunch", etc.
+  return v;
 }
 
 app.http("CreateRecipe", {
@@ -41,17 +43,23 @@ app.http("CreateRecipe", {
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      // ---- Auth (support both "returns object" and "throws" styles)
-      let user;
-      try {
-        user = requireUser(request);
-      } catch (e) {
-        context.error("requireUser threw:", e);
-        return { status: 401, jsonBody: { error: "Unauthorized" } };
-      }
+      // ✅ Option A: Logic App bypass via x-la-secret
+      const la = isLogicAppCall(request);
 
-      if (!user?.ok) {
-        return { status: user?.status || 401, jsonBody: { error: user?.error || "Unauthorized" } };
+      let ownerEmail = "logicapp@system";
+      let user = null;
+
+      if (!la) {
+        try {
+          user = requireUser(request);
+        } catch (e) {
+          context.error("requireUser threw:", e);
+          return { status: 401, jsonBody: { error: "Unauthorized" } };
+        }
+        if (!user?.ok) {
+          return { status: user?.status || 401, jsonBody: { error: user?.error || "Unauthorized" } };
+        }
+        ownerEmail = user.email;
       }
 
       // ---- Body
@@ -63,65 +71,45 @@ app.http("CreateRecipe", {
       let body = {};
       try {
         body = await request.json();
-      } catch (e) {
+      } catch {
         return { status: 400, jsonBody: { error: "Invalid JSON body" } };
       }
       if (!body || typeof body !== "object") body = {};
 
-      // ---- Required fields
       const title = cleanString(body.title);
       const instructions = cleanString(body.instructions);
 
       if (!title) return { status: 400, jsonBody: { error: "title is required" } };
       if (!instructions) return { status: 400, jsonBody: { error: "instructions is required" } };
 
-      // ---- Ingredients: accept array OR string
       const cleanedIngredients = parseIngredients(body.ingredients);
-      // if you want to enforce:
-      // if (!cleanedIngredients.length) return { status: 400, jsonBody: { error: "ingredients must not be empty" } };
 
-      // ---- Schema compatibility
-
-      // NEW: mealTypes: []  (store first one as mealType string)
-      // OLD/UI: mealType: "Dinner"
       const mealTypesRaw = Array.isArray(body.mealTypes) ? body.mealTypes : [];
       const mealType =
-        mealTypesRaw.length > 0
-          ? cleanMealType(mealTypesRaw[0])
-          : cleanMealType(body.mealType);
+        mealTypesRaw.length > 0 ? cleanMealType(mealTypesRaw[0]) : cleanMealType(body.mealType);
 
-      // NEW: dietaryTags: []
-      // OLD/UI: dietary: []
-      // ✅ dietary tags stored lowercase consistently
       const dietaryTags =
         cleanArrayLower(body.dietaryTags).length > 0
           ? cleanArrayLower(body.dietaryTags)
           : cleanArrayLower(body.dietary);
 
-      // tags (future-proof)
       const tags = cleanArrayLower(body.tags);
 
-      // ---- Create entity
       const id = crypto.randomUUID();
       const createdAt = new Date().toISOString();
 
       const entity = {
         partitionKey: "recipe",
         rowKey: id,
-
         title,
         instructions,
-
         ingredientsJson: JSON.stringify(cleanedIngredients),
-
         createdAt,
         updatedAt: "",
         imageUrl: "",
         imageBlobName: "",
+        ownerEmail: ownerEmail, // ✅ important
 
-        ownerEmail: user.email,
-
-        // filterable metadata (safe defaults)
         mealType: mealType || "",
         dietaryTagsJson: JSON.stringify(dietaryTags),
         tagsJson: JSON.stringify(tags),
@@ -140,9 +128,8 @@ app.http("CreateRecipe", {
           imageUrl: "",
           createdAt,
           updatedAt: null,
-          ownerEmail: user.email,
+          ownerEmail: ownerEmail, // ✅ important
 
-          // return both shapes so frontend doesn’t care
           mealType: mealType || "",
           mealTypes: mealType ? [mealType] : [],
           dietaryTags,
@@ -153,10 +140,7 @@ app.http("CreateRecipe", {
       context.error("CreateRecipe error:", err);
       return {
         status: 500,
-        jsonBody: {
-          error: "Server error",
-          details: String(err?.message || err),
-        },
+        jsonBody: { error: "Server error", details: String(err?.message || err) },
       };
     }
   },
