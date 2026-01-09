@@ -12,6 +12,7 @@ export function Card({ title, children, right }) {
   );
 }
 
+
 export function Input(props) {
   return (
     <input
