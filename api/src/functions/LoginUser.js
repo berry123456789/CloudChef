@@ -2,7 +2,14 @@ const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
 const bcrypt = require("bcryptjs");
 
-const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+const connectionString =
+  process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.AzureWebJobsStorage;
+
+if (!connectionString) {
+  context.res = { status: 500, body: "Missing AZURE_STORAGE_CONNECTION_STRING" };
+  return;
+}
+
 
 app.http("LoginUser", {
   methods: ["POST"],
