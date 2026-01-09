@@ -1,12 +1,18 @@
 const { app } = require("@azure/functions");
 const crypto = require("crypto");
 const { getRecipesTableClient } = require("../shared/storage");
+const { requireUser } = require("../shared/auth");
 
 app.http("CreateRecipe", {
   methods: ["POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
+      // Require login
+      const auth = requireUser(request);
+      if (!auth.ok) return { status: auth.status, jsonBody: { error: auth.error } };
+      const createdBy = auth.email;
+
       const contentType = (request.headers.get("content-type") || "").toLowerCase();
       if (!contentType.includes("application/json")) {
         return { status: 415, jsonBody: { error: "Content-Type must be application/json" } };
@@ -36,6 +42,7 @@ app.http("CreateRecipe", {
         instructions,
         ingredientsJson: JSON.stringify(cleanedIngredients),
         createdAt,
+        createdBy, // ✅ owner
         imageUrl: "",
       };
 
@@ -51,6 +58,7 @@ app.http("CreateRecipe", {
           instructions,
           imageUrl: "",
           createdAt,
+          createdBy,
         },
       };
     } catch (err) {
