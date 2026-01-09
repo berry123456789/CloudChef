@@ -62,7 +62,7 @@ export default function Recipes() {
   function goToSingle() {
     const id = singleId.trim();
     if (!id) return;
-    navigate(`/recipes/${id}`);
+    navigate(`/recipe/${id}`);
   }
 
   useEffect(() => {
