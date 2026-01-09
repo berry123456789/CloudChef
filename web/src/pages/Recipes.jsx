@@ -1,8 +1,8 @@
-// web/src/pages/Recipes.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Input, Button, ErrorBanner, StatusPill } from "../components/ui.jsx";
 import { listRecipes } from "../lib/api.js";
+import RecipeCard from "../components/RecipeCard.jsx";
 
 const MEALS = ["Any meal", "Breakfast", "Lunch", "Dinner", "Snack", "Dessert"];
 const DIETARY = ["Vegan", "Vegetarian", "Gluten-free", "Dairy-free"];
@@ -25,7 +25,7 @@ function wordsFrom(s) {
 }
 
 function extractItemsAndToken(resp) {
-  // Support different backend shapes
+  // Supports your backend shape { items, nextCursor } and other shapes
   if (Array.isArray(resp)) return { items: resp, continuationToken: "" };
 
   const items =
@@ -37,7 +37,9 @@ function extractItemsAndToken(resp) {
     resp?.Results ||
     [];
 
+  // ✅ your ListRecipes returns nextCursor
   const continuationToken =
+    resp?.nextCursor ||
     resp?.continuationToken ||
     resp?.ContinuationToken ||
     resp?.nextContinuationToken ||
@@ -70,6 +72,10 @@ function getIngredients(r) {
       .filter(Boolean);
   }
   return [];
+}
+
+function getImageUrl(r) {
+  return r?.imageUrl || r?.ImageUrl || "";
 }
 
 export default function Recipes() {
@@ -139,7 +145,6 @@ export default function Recipes() {
       setHasMore(Boolean(continuationToken));
     } catch (e) {
       setError(e?.message || "Failed to load more recipes");
-      // keep hasMore as-is; user can retry by scrolling again
     } finally {
       setLoadingMore(false);
     }
@@ -186,15 +191,15 @@ export default function Recipes() {
         }
       }
 
-      // meal filter (optional, only if recipe has mealType)
+      // meal filter
       if (meal !== "Any meal") {
         const mt = String(r?.mealType || r?.MealType || "").toLowerCase();
         if (mt && mt !== meal.toLowerCase()) return false;
       }
 
-      // dietary filter (optional, only if recipe has dietary/tags)
+      // dietary filter
       if (dietNeed.length) {
-        const tags = r?.dietary || r?.tags || r?.Tags || [];
+        const tags = r?.dietary || r?.dietaryTags || r?.tags || r?.Tags || [];
         const norm = Array.isArray(tags)
           ? tags.map(normalizeDietTag)
           : String(tags || "")
@@ -305,38 +310,20 @@ export default function Recipes() {
           ) : (
             <div className="flex flex-col gap-3">
               {filtered.map((r) => {
-                const id = getId(r);
-                const title = getTitle(r);
-                const instructions = getInstructions(r);
-                const ingredients = getIngredients(r);
-
-                return (
-                  <button
-                    key={id || title}
-                    onClick={() => id && nav(`/recipes/${encodeURIComponent(id)}`)}
-                    className="text-left rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.04]"
-                  >
-                    <div className="text-lg font-semibold text-slate-100">{title}</div>
-
-                    {instructions ? (
-                      <div className="mt-1 line-clamp-2 text-sm text-slate-300">
-                        {instructions}
-                      </div>
-                    ) : null}
-
-                    {ingredients.length ? (
-                      <div className="mt-2 text-xs text-slate-400">
-                        Ingredients: {ingredients.slice(0, 8).join(", ")}
-                        {ingredients.length > 8 ? "…" : ""}
-                      </div>
-                    ) : null}
-                  </button>
-                );
+                const shaped = {
+                  id: getId(r),
+                  title: getTitle(r),
+                  instructions: getInstructions(r),
+                  ingredients: getIngredients(r),
+                  imageUrl: getImageUrl(r),
+                };
+                return <RecipeCard key={shaped.id || shaped.title} recipe={shaped} />;
               })}
 
-              {/* sentinel for infinite scroll */}
               <div ref={sentinelRef} className="h-8" />
-              {loadingMore ? <div className="py-3 text-sm text-slate-300">Loading more…</div> : null}
+              {loadingMore ? (
+                <div className="py-3 text-sm text-slate-300">Loading more…</div>
+              ) : null}
             </div>
           )}
         </Card>
