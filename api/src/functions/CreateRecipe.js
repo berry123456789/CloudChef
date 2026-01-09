@@ -3,15 +3,22 @@ const crypto = require("crypto");
 const { getRecipesTableClient } = require("../shared/storage");
 const { requireUser } = require("../shared/auth");
 
+function cleanString(x) {
+  return String(x || "").trim();
+}
+
+function cleanTags(input) {
+  if (!Array.isArray(input)) return [];
+  return input.map((t) => cleanString(t).toLowerCase()).filter(Boolean);
+}
+
 app.http("CreateRecipe", {
   methods: ["POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      // Require login
-      const auth = requireUser(request);
-      if (!auth.ok) return { status: auth.status, jsonBody: { error: auth.error } };
-      const createdBy = auth.email;
+      const user = requireUser(request);
+      if (!user.ok) return { status: user.status, jsonBody: { error: user.error } };
 
       const contentType = (request.headers.get("content-type") || "").toLowerCase();
       if (!contentType.includes("application/json")) {
@@ -20,9 +27,13 @@ app.http("CreateRecipe", {
 
       const body = await request.json();
 
-      const title = (body.title || "").trim();
-      const instructions = (body.instructions || "").trim();
+      const title = cleanString(body.title);
+      const instructions = cleanString(body.instructions);
       const ingredients = body.ingredients;
+
+      // NEW fields (optional)
+      const mealType = cleanString(body.mealType); // e.g. breakfast/lunch/dinner/snack
+      const dietaryTags = cleanTags(body.dietaryTags); // e.g. ["vegan","gluten-free"]
 
       if (!title) return { status: 400, jsonBody: { error: "title is required" } };
       if (!instructions) return { status: 400, jsonBody: { error: "instructions is required" } };
@@ -30,7 +41,7 @@ app.http("CreateRecipe", {
         return { status: 400, jsonBody: { error: "ingredients must be an array" } };
       }
 
-      const cleanedIngredients = ingredients.map((x) => String(x).trim()).filter(Boolean);
+      const cleanedIngredients = ingredients.map((x) => cleanString(x)).filter(Boolean);
 
       const id = crypto.randomUUID();
       const createdAt = new Date().toISOString();
@@ -42,8 +53,14 @@ app.http("CreateRecipe", {
         instructions,
         ingredientsJson: JSON.stringify(cleanedIngredients),
         createdAt,
-        createdBy, // ✅ owner
+        updatedAt: "",
         imageUrl: "",
+        imageBlobName: "",
+        ownerEmail: user.email,
+
+        // store filterable metadata
+        mealType,
+        dietaryTagsJson: JSON.stringify(dietaryTags),
       };
 
       const table = getRecipesTableClient();
@@ -54,19 +71,19 @@ app.http("CreateRecipe", {
         jsonBody: {
           id,
           title,
-          ingredients: cleanedIngredients,
           instructions,
+          ingredients: cleanedIngredients,
           imageUrl: "",
           createdAt,
-          createdBy,
+          updatedAt: null,
+          ownerEmail: user.email,
+          mealType,
+          dietaryTags,
         },
       };
     } catch (err) {
       context.error(err);
-      return {
-        status: 500,
-        jsonBody: { error: "Server error", details: String(err?.message || err) },
-      };
+      return { status: 500, jsonBody: { error: "Server error", details: String(err?.message || err) } };
     }
   },
 });
