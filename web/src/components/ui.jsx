@@ -1,5 +1,4 @@
-
-import { classNames } from "../lib/api.js";
+import { classNames } from "../lib/utils.js";
 
 export function Card({ title, children, right }) {
   return (
