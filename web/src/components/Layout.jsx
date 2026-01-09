@@ -6,83 +6,88 @@ function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-function NavBtn({ to, children, end = false }) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        classNames(
-          "rounded-xl px-4 py-2 text-sm font-semibold transition",
-          isActive
-            ? "bg-emerald-500 text-slate-950"
-            : "bg-white/10 text-slate-100 hover:bg-white/15"
-        )
-      }
-    >
-      {children}
-    </NavLink>
-  );
-}
-
 export default function Layout() {
-  const nav = useNavigate();
-  const { isAuthed, email, logout } = useAuth();
+  const navigate = useNavigate();
+  const { isAuthed, email, logout, ready } = useAuth();
 
-  function onLogout() {
-    logout();
-    nav("/login");
-  }
+  const linkBase =
+    "rounded-xl px-4 py-2 text-sm font-semibold transition border border-white/10";
+  const active = "bg-emerald-500 text-slate-950 border-emerald-500";
+  const inactive = "bg-white/5 text-slate-100 hover:bg-white/10";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="border-b border-white/10 bg-slate-950/70 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight">CloudChef</h1>
-              <div className="mt-1 text-sm text-slate-300">
-                API:{" "}
-                <span className="break-all font-mono text-slate-200">{API_BASE}</span>
-              </div>
-              <div className="mt-2 text-sm text-slate-300">
-                {isAuthed ? (
-                  <span>
-                    Signed in as{" "}
-                    <span className="font-mono text-slate-200">{email}</span>
-                  </span>
-                ) : (
-                  <span>Not signed in</span>
-                )}
-              </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100">
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-extrabold tracking-tight">CloudChef</h1>
+            <div className="mt-1 text-slate-300">
+              Manage recipes • Upload images • CRUD demo
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <NavBtn to="/" end>Recipes</NavBtn>
-
-              {/* Create/edit should require auth */}
-              <NavBtn to="/create">Create</NavBtn>
-
-              {!isAuthed ? (
-                <>
-                  <NavBtn to="/login">Login</NavBtn>
-                  <NavBtn to="/register">Register</NavBtn>
-                </>
-              ) : (
-                <button
-                  onClick={onLogout}
-                  className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20"
-                >
-                  Logout
-                </button>
-              )}
+            <div className="mt-1 text-sm text-slate-400">
+              API: {API_BASE || "(missing VITE_API_BASE)"}
+            </div>
+            <div className="mt-2 text-sm text-slate-300">
+              {!ready ? "Loading session..." : isAuthed ? `Signed in as ${email}` : "Not signed in"}
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <Outlet />
+          <div className="flex flex-wrap items-center gap-2">
+            <NavLink
+              to="/"
+              className={({ isActive }) =>
+                classNames(linkBase, isActive ? active : inactive)
+              }
+            >
+              Recipes
+            </NavLink>
+
+            <NavLink
+              to="/create"
+              className={({ isActive }) =>
+                classNames(linkBase, isActive ? active : inactive)
+              }
+            >
+              Create
+            </NavLink>
+
+            {!isAuthed ? (
+              <>
+                <NavLink
+                  to="/login"
+                  className={({ isActive }) =>
+                    classNames(linkBase, isActive ? active : inactive)
+                  }
+                >
+                  Login
+                </NavLink>
+
+                <NavLink
+                  to="/register"
+                  className={({ isActive }) =>
+                    classNames(linkBase, isActive ? active : inactive)
+                  }
+                >
+                  Register
+                </NavLink>
+              </>
+            ) : (
+              <button
+                className={classNames(linkBase, "bg-white/5 hover:bg-white/10")}
+                onClick={() => {
+                  logout();
+                  navigate("/");
+                }}
+              >
+                Logout
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-10">
+          <Outlet />
+        </div>
       </div>
     </div>
   );
