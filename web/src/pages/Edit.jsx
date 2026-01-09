@@ -1,3 +1,4 @@
+// web/src/pages/Edit.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { apiOk, getRecipe, updateRecipe as apiUpdate, uploadRecipeImage } from "../lib/api.js";
@@ -15,11 +16,11 @@ function normalizeDietTag(t) {
   return x;
 }
 
-function toMealLabel(m) {
-  // stored as lower-case like "breakfast" -> display "Breakfast"
-  const x = String(m || "").trim();
-  if (!x) return "Any meal";
-  return x.charAt(0).toUpperCase() + x.slice(1);
+function splitIngredients(s) {
+  return String(s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 export default function Edit() {
@@ -35,15 +36,13 @@ export default function Edit() {
   const [editInstructions, setEditInstructions] = useState("");
   const [editIngredientsText, setEditIngredientsText] = useState("");
 
-  // NEW: editable filters
   const [mealType, setMealType] = useState("Any meal");
   const [dietary, setDietary] = useState(() => new Set());
-
-  const dietaryList = useMemo(() => Array.from(dietary), [dietary]);
 
   const [file, setFile] = useState(null);
 
   const loading = status === "loading";
+  const dietaryList = useMemo(() => Array.from(dietary), [dietary]);
 
   function toggleDietTag(tag) {
     const k = normalizeDietTag(tag);
@@ -62,19 +61,22 @@ export default function Edit() {
       const r = await getRecipe(id);
       setLoaded(r);
 
-      // prefill
       setEditTitle(r?.title || "");
       setEditInstructions(r?.instructions || "");
       setEditIngredientsText(Array.isArray(r?.ingredients) ? r.ingredients.join(", ") : "");
 
-      // hydrate filters (support multiple shapes)
-      const existingMeal =
-        r?.mealType || (Array.isArray(r?.mealTypes) && r.mealTypes[0]) || "";
-      setMealType(existingMeal ? toMealLabel(existingMeal) : "Any meal");
+      // ✅ prefill meal/dietary (supports multiple shapes)
+      const mt = r?.mealType ? String(r.mealType) : "";
+      setMealType(mt ? mt : "Any meal");
 
-      const existingDiet =
-        Array.isArray(r?.dietaryTags) ? r.dietaryTags : Array.isArray(r?.dietary) ? r.dietary : [];
-      setDietary(new Set(existingDiet.map(normalizeDietTag)));
+      const tags =
+        r?.dietaryTags ||
+        r?.dietary ||
+        r?.dietaryTagsList ||
+        (Array.isArray(r?.dietaryTagsJson) ? r.dietaryTagsJson : []);
+
+      const set = new Set((Array.isArray(tags) ? tags : []).map(normalizeDietTag).filter(Boolean));
+      setDietary(set);
 
       setStatus("done");
     } catch (e) {
@@ -92,30 +94,26 @@ export default function Edit() {
 
     setStatus("loading");
     try {
-      const ingredients = editIngredientsText
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const payload = {
         title: editTitle.trim(),
         instructions: editInstructions.trim(),
-        ingredients,
+        ingredients: splitIngredients(editIngredientsText),
 
-        // send in backend-friendly shape
-        mealType: mealType === "Any meal" ? "" : mealType.toLowerCase(),
+        // ✅ send the same keys backend expects
+        mealType: mealType === "Any meal" ? "" : mealType,
         dietaryTags: dietaryList,
-        // optional compat for any code expecting array
-        mealTypes: mealType === "Any meal" ? [] : [mealType.toLowerCase()],
       };
 
       // allow partial update: remove empties
       if (!payload.title) delete payload.title;
       if (!payload.instructions) delete payload.instructions;
       if (!payload.ingredients?.length) delete payload.ingredients;
+      if (!payload.mealType) delete payload.mealType;
+      if (!payload.dietaryTags?.length) delete payload.dietaryTags;
 
-      // we DO want empty strings/arrays to clear filters, so keep these keys
-      // (mealType "" clears, dietaryTags [] clears)
+      if (Object.keys(payload).length === 0) {
+        throw new Error("Enter at least one field to update.");
+      }
 
       await apiUpdate(id, payload);
       navigate(`/recipes/${id}`);
@@ -138,7 +136,7 @@ export default function Edit() {
     try {
       await uploadRecipeImage(id, file);
       setFile(null);
-      await load(); // refresh after upload
+      await load();
       setStatus("done");
     } catch (e) {
       setStatus("error");
@@ -175,7 +173,7 @@ export default function Edit() {
       <ErrorBanner error={error} />
 
       <Card title={`Edit recipe: ${id}`}>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Title" />
           <Textarea
             value={editInstructions}
@@ -189,7 +187,6 @@ export default function Edit() {
             placeholder="Ingredients (comma separated)"
           />
 
-          {/* NEW: Meal + Dietary controls */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <div className="mb-2 text-sm font-medium text-slate-200">Meal type</div>
@@ -243,35 +240,29 @@ export default function Edit() {
 
           <div className="mt-6 border-t border-white/10 pt-5">
             <div className="mb-2 text-sm font-semibold text-slate-100">Upload image</div>
-
             <input
               type="file"
               accept="image/*"
               className="block w-full text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-100 hover:file:bg-white/15"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
-
             <div className="mt-3 flex gap-2">
               <Button onClick={onUpload} disabled={loading} variant="secondary">
                 Upload
               </Button>
             </div>
 
-            {/* SHOW image (not just URL) */}
             {loaded?.imageUrl ? (
-              <div className="mt-4 space-y-2">
-                <img
-                  src={loaded.imageUrl}
-                  alt="Recipe"
-                  className="max-h-72 w-full rounded-xl border border-white/10 object-cover"
-                  onError={() => {
-                    // If blob is private or content-type wrong, this will fail.
-                    // Keep showing url for debugging.
-                  }}
-                />
-                <div className="text-xs text-slate-400">
-                  Current imageUrl:{" "}
-                  <span className="break-all font-mono text-slate-200">{loaded.imageUrl}</span>
+              <div className="mt-4">
+                <div className="mb-2 text-xs text-slate-400">Current image</div>
+                <div className="overflow-hidden rounded-2xl border border-white/10">
+                  <img
+                    src={loaded.imageUrl}
+                    alt="Recipe"
+                    className="h-56 w-full object-cover"
+                    // helps when blob updates but URL stays similar
+                    key={loaded.imageUrl}
+                  />
                 </div>
               </div>
             ) : null}
